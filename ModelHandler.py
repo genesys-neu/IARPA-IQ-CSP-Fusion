@@ -11,6 +11,49 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+cfg = {
+    'AlexNet1D': [128, 'M', 128, 'M', 128, 'M', 128, 'M', 128, 'M']
+    #'Baseline': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512],
+}
+
+class AlexNet1D(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(AlexNet1D, self).__init__()
+        self.features = self._make_layers(cfg['AlexNet1D'])
+        self.classifier = nn.Sequential(
+            nn.Dropout(),
+            nn.Linear(256, 256),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(256, 256),
+            nn.ReLU(True),
+            nn.Linear(256, 128),
+            nn.ReLU(True),
+            nn.Linear(128, output_dim),
+        )
+        #self.classifier = nn.Linear(512, 10)
+
+    def forward(self, x):
+        out = self.features(x)
+        out = out.view(out.size(0), -1)
+        out = self.classifier(out)
+        return out
+
+    def _make_layers(self, cfg):
+        layers = []
+        in_channels = 2
+        for x in cfg:
+            if x == 'M':
+                layers += [nn.MaxPool1d(kernel_size=2, stride=2)]
+            else:
+                layers += [nn.Conv1d(in_channels, x, kernel_size=7, padding=1),
+                           nn.ReLU(inplace=True)]
+                in_channels = x
+                layers += [nn.Conv1d(in_channels, x, kernel_size=5, padding=2),
+                           nn.ReLU(inplace=True)]
+                in_channels = x
+        return nn.Sequential(*layers)
+
 # CNN based model for non-conjugate features as unimodal network
 class NonConjugateNet(nn.Module):
     def __init__(self, input_dim, output_dim, fusion ='ultimate'):
@@ -109,10 +152,10 @@ class ConjugateNet(nn.Module):
         return x
 
 
-# CNN based model for conjugate features as unimodal network
-class FeatureNet(nn.Module):
+# This is for multi-label multi-class classification
+class FeatureNet_7class(nn.Module):
     def __init__(self, input_dim, output_dim, fusion='ultimate'):
-        super(FeatureNet, self).__init__()
+        super(FeatureNet_7class, self).__init__()
         # self.conv1 = nn.Conv1d(input_dim, 256, kernel_size=2, padding="same")
         # self.conv2 = nn.Conv1d(256, 256, kernel_size=2, padding="same")
         # self.pool = nn.MaxPool1d(2, padding=1)
@@ -143,6 +186,36 @@ class FeatureNet(nn.Module):
             x = self.sigmoid(self.hidden7(x))
         else:
             x = self.sigmoid(self.out(x))
+        return x
+
+# This is for 2-class classification
+class FeatureNet(nn.Module):
+    def __init__(self, input_dim, output_dim, fusion='ultimate'):
+        super(FeatureNet, self).__init__()
+        # self.conv1 = nn.Conv1d(input_dim, 256, kernel_size=2, padding="same")
+        # self.conv2 = nn.Conv1d(256, 256, kernel_size=2, padding="same")
+        # self.pool = nn.MaxPool1d(2, padding=1)
+
+        self.hidden1 = nn.Linear(input_dim, 128) # 256
+        self.hidden2 = nn.Linear(128, 128)
+        self.out = nn.Linear(128, output_dim)  # 128
+        #######################
+        self.drop = nn.Dropout(0.5)
+        self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
+        self.sigmoid = nn.Sigmoid()
+        self.softmax = nn.Softmax()
+        self.fusion = fusion
+
+    def forward(self, x):
+        # print("shape", x.shape)
+        x = self.sigmoid(self.hidden1(x))
+        x = self.sigmoid(self.hidden2(x))
+        # x = self.drop(x)
+        if self.fusion == 'penultimate':
+            x = self.sigmoid(self.hidden2(x))
+        else:
+            x = self.softmax(self.out(x))
         return x
 
 # CNN based model does not work

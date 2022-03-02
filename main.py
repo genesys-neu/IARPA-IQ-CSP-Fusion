@@ -15,6 +15,11 @@ import time
 
 import pickle, os
 
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
+from sklearn import metrics
+from sklearn import svm
+
 import read_file
 from sklearn.model_selection import train_test_split
 from sklearn import preprocessing
@@ -55,17 +60,20 @@ def create_labels(ylabel):
     return ylabel_hot
 
 
+# IQ DATA PATH: D:\IARPA_DATA\IQDataSet_LTE_DSSS_v2\IQ
+
 # Passing different arguments
 parser = argparse.ArgumentParser(description='Configure the files before training the net.')
 parser.add_argument('--data_folder', help='Location of the data directory', type=str, default= 'D:/IARPA_DATA/')
-parser.add_argument('--input', nargs='*', default=['nc', 'c'],choices = ['iq', 'nc', 'c'],
+parser.add_argument('--input', nargs='*', default=['iq'],choices = ['iq', 'nc', 'c'],
 help='Which data to use as input. Select from: raw IQ data, non-conjugate features, conjugate features.')
 parser.add_argument('--feature_options', nargs='*', default=[0, 1, 2, 3],choices = [0, 1, 2, 3],
 help='Which features to use from the conjugate and non-conjugate files.')
-parser.add_argument('--num_classes', default=7, type=int, help='Number of classes for classification.')
+parser.add_argument('--iq_slice_len',default=256, type=int,help='Slice length for processing IQ files') # 32
+parser.add_argument('--num_classes', default=2, type=int, help='Number of classes for classification.')
 
 #Arguments for train/test on 80/20 percentage of overall data randomly
-parser.add_argument('--random_test', type=str2bool, help='Perform train/test on 80/20 of data.', default=True)
+parser.add_argument('--random_test', type=str2bool, help='Perform train/test on 80/20 of data.', default=False)
 parser.add_argument('--random_test_blocks', nargs='*', default=[131072],choices = [131072, 262144, 524288],
 help='The block lengths to use for random train/test.')
 
@@ -76,15 +84,15 @@ parser.add_argument('--testing_blocks', nargs='*', default=[524288],choices = [1
 help='Which block length to use for training.') # use this argument only if you set the 'random_test' argument as False
 
 #Arguments for training and testing on data from all block length, but test on a specific block length (exclusive from training)
-parser.add_argument('--optimal_test', type=str2bool, help='Perform training on data from all block length, but test on a specific block length (exclusive from training).', default=False)
+parser.add_argument('--optimal_test', type=str2bool, help='Perform training on data from all block length, but test on a specific block length (exclusive from training).', default=True)
 parser.add_argument('--optimal_test_blocks', nargs='*', default=[131072],choices = [131072, 262144, 524288],
 help='The block length of which 50/50 data is used for train/test. We use 100 percent data for training for rest of the two block lengths.')
 
 # Train and test on specific SNR values
 parser.add_argument('--random_snr_test', type=str2bool, help='Perform training on features from one SNR level and other.', default=True)
-parser.add_argument('--random_snr', nargs='*', default=[0],choices = [0, 5, 10],
+parser.add_argument('--random_snr', nargs='*', default=[10],choices = [0, 5, 10],
 help='The SNR to use for random train/test.')
-parser.add_argument('--training_snr', nargs='*', default=[10],choices = [0, 5, 10],
+parser.add_argument('--training_snr', nargs='*', default=[5],choices = [0, 5, 10],
 help='Which SNR to use for training.') # use this argument only if you set the 'random_snr_test' argument as False
 parser.add_argument('--testing_snr', nargs='*', default=[0],choices = [0, 5, 10],
 help='Which SNR to use for training.') # use this argument only if you set the 'random_snr_test' argument as False
@@ -93,6 +101,7 @@ help='Which SIRs of DSSS to use for train/test.') # this argument will be used a
 
 
 #Neural Network Parameters
+parser.add_argument('--classifier', type=str, default='nn', help='Options: lr (for logistic regression), nv (naive bayes), svm (support vector machine), nn (neural network).')
 parser.add_argument('--lr', default=0.0001, type=float,help='learning rate for Adam optimizer',)
 parser.add_argument('--bs',default=32, type=int,help='Batch size') # 32
 parser.add_argument('--epochs', default=50, type = int, help='Specify the epochs to train')
@@ -135,14 +144,14 @@ if 'nc' in args.input:
             inputs_nc, labels_nc = read_file.read_processed_feat(args.data_folder, 'nc', args.feature_options, args.random_test_blocks, args.num_classes, args.random_snr, args.dsss_sir)
             print("Shapes of the non-conjugate features and labels: ", inputs_nc.shape, labels_nc.shape)
         else: # if we train on one SNR and test on other snrs
-            inputs_train_nc, labels_train_nc = read_file.read_processed_feat(args.data_folder, 'nc', args.feature_options,
+            xtrain_nc, ytrain_nc = read_file.read_processed_feat(args.data_folder, 'nc', args.feature_options,
                                                                  args.random_test_blocks, args.num_classes,
                                                                  args.training_snr, args.dsss_sir)
-            inputs_test_nc, labels_test_nc = read_file.read_processed_feat(args.data_folder, 'nc',
+            xtest_nc, ytest_nc = read_file.read_processed_feat(args.data_folder, 'nc',
                                                                               args.feature_options,
                                                                               args.random_test_blocks, args.num_classes,
                                                                               args.testing_snr, args.dsss_sir)
-            print("Shapes of the non-conjugate features and labels: ", inputs_train_nc.shape, labels_train_nc.shape, inputs_test_nc.shape, labels_test_nc.shape)
+            print("Shapes of the non-conjugate features and labels: ", xtrain_nc.shape, ytrain_nc.shape, xtest_nc.shape, ytest_nc.shape)
     elif args.optimal_test==True: # test on 50% data of specific block length and train on rest of 50% of that bloack length, along with rest two block length
         rest_block_lengths = [x for x in all_block_lengths if x not in args.optimal_test_blocks]
             # all_block_lengths - args.optimal_test_blocks
@@ -190,16 +199,16 @@ if 'c' in args.input:
                                                                  args.random_snr, args.dsss_sir)
             print("Shapes of the conjugate features and labels: ", inputs_c.shape, labels_c.shape)
         else:  # if we train on one SNR and test on other snrs
-            inputs_train_c, labels_train_c = read_file.read_processed_feat(args.data_folder, 'c',
+            xtrain_c, ytrain_c = read_file.read_processed_feat(args.data_folder, 'c',
                                                                              args.feature_options,
                                                                              args.random_test_blocks, args.num_classes,
                                                                              args.training_snr, args.dsss_sir)
-            inputs_test_c, labels_test_c = read_file.read_processed_feat(args.data_folder, 'c',
+            xtest_c, ytest_c = read_file.read_processed_feat(args.data_folder, 'c',
                                                                            args.feature_options,
                                                                            args.random_test_blocks, args.num_classes,
                                                                            args.testing_snr, args.dsss_sir)
-            print("Shapes of the conjugate features and labels: ", inputs_train_c.shape, labels_train_c.shape,
-                  inputs_test_c.shape, labels_test_c.shape)
+            print("Shapes of the conjugate features and labels: ", xtrain_c.shape, ytrain_c.shape,
+                  xtest_c.shape, ytest_c.shape)
     elif args.optimal_test == True:  # test on 50% data of specific block length and train on rest of 50% of that bloack length, along with rest two block length
         rest_block_lengths = [x for x in all_block_lengths if x not in args.optimal_test_blocks]
         # all_block_lengths - args.optimal_test_blocks
@@ -243,6 +252,24 @@ if 'c' in args.input:
               ytrain_c.shape, ytest_c.shape)
     saved_file_name = 'conjugate'
 
+# reading IQ features
+if 'iq' in args.input:
+    # inputs_iq, labels_iq = read_file.read_iq_files(args.data_folder, args.random_test_blocks, args.iq_slice_len, args.num_classes, args.random_snr, args.dsss_sir)
+    # print("Shapes of the IQ features and labels: ", inputs_iq.shape, labels_iq.shape)
+
+    if args.random_snr_test == True:
+        inputs_iq, labels_iq = read_file.read_iq_files(args.data_folder, args.random_test_blocks, args.iq_slice_len, args.num_classes, args.random_snr, args.dsss_sir)
+        print("Shapes of the conjugate features and labels: ", inputs_iq.shape, labels_iq.shape)
+    else:  # if we train on one SNR and test on other snrs
+        xtrain_iq, ytrain_iq = read_file.read_iq_files(args.data_folder, args.random_test_blocks, args.iq_slice_len, args.num_classes, args.training_snrs, args.dsss_sir)
+        xtest_iq, ytest_iq = read_file.read_iq_files(args.data_folder, args.random_test_blocks, args.iq_slice_len, args.num_classes, args.testing_snrs, args.dsss_sir)
+        print("Shapes of the conjugate features and labels: ", xtrain_iq.shape, ytrain_iq.shape,
+                  xtest_iq.shape, ytest_iq.shape)
+
+    saved_file_name = 'IQ'
+    # else:
+    #     print("Please change the argument random_test argument to True, the I/Q data part is not dependent on the block length.")
+
 ##############################################################################
 # Model configuration
 ##############################################################################
@@ -258,7 +285,7 @@ if len(args.input) >1: fusion = True
 ################################################################
 # Implementing in pytorch
 import torch
-from ModelHandler import NonConjugateNet, ConjugateNet, FeatureNet, FeatureFusion
+from ModelHandler import NonConjugateNet, ConjugateNet, FeatureNet, AlexNet1D, FeatureFusion
 
 
 
@@ -288,7 +315,14 @@ if fusion == False:
             ytrain = ytrain_nc
             xtest = xtest_nc
             ytest = ytest_nc
-        model = NonConjugateNet(input_dim=xtrain.shape[1], output_dim=args.num_classes)
+
+        xtrain = np.swapaxes(xtrain, 1, 2)
+        ytrain = np.swapaxes(ytrain, 1, 2)
+        xtest = np.swapaxes(xtest, 1, 2)
+        ytest = np.swapaxes(ytest, 1, 2)
+
+        model = FeatureNet(input_dim=xtrain.shape[1], output_dim=args.num_classes)
+
 
 
     if 'c' in args.input:
@@ -308,7 +342,21 @@ if fusion == False:
             ytrain = ytrain_c
             xtest = xtest_c
             ytest = ytest_c
-        model = ConjugateNet(input_dim=xtrain.shape[1], output_dim=args.num_classes)
+        model = FeatureNet(input_dim=xtrain.shape[1], output_dim=args.num_classes)
+
+    if 'iq' in args.input:
+        # This will be triggered when doing train/test split randomly on whole data
+        if args.random_snr_test == True:
+            inputs = inputs_iq
+            labels = labels_iq
+            xtrain, xtest, ytrain, ytest = train_test_split(inputs, labels, test_size=0.2,
+                                                                random_state=42)  # 80/20 is train/test size
+        else:
+            xtrain = xtrain_iq
+            ytrain = ytrain_iq
+            xtest = xtest_iq
+            ytest = ytest_iq
+        model = AlexNet1D(input_dim=xtrain.shape[1], output_dim=args.num_classes)
 
     # INITIALIZING THE WEIGHT AND BIAS
     model.apply(weights_init)
@@ -419,7 +467,8 @@ def single_modal_training(saved_file_name, optimizer_name = 'adam'):
     test_generator = torch.utils.data.DataLoader(test_set, **params)
 
     # setting up the loss function
-    criterion = torch.nn.CrossEntropyLoss()
+    if args.num_classes ==2: criterion = torch.nn.CrossEntropyLoss()  # THIS IS USED WHEN THE LABELS ARE IN ONE HOT ENCODING
+    else: criterion = torch.nn.BCEWithLogitsLoss() # THIS IS USED WHEN WE ARE DOING MULTI-LABEL CLASSIFICATION
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.001)
 
@@ -456,17 +505,17 @@ def single_modal_training(saved_file_name, optimizer_name = 'adam'):
             # train_correct += (np.argmax(labels, axis=1) == np.argmax(outputs, axis=1)).sum().item()
             # print("In epoch ", epoch, " Train Labels: ", labels)
             # print("In epoch ", epoch, " Train Outputs: ", outputs)
-            train_correct_anomaly += (labels[:, 0] == outputs[:, 0]).sum()
+            if args.num_classes == 2:
+                train_correct_anomaly += (np.argmax(labels, axis=1) == np.argmax(outputs, axis=1)).sum().item()
+            else:
+                train_correct_anomaly += (labels[:, 0] == outputs[:, 0]).sum()
             # train_correct_all += (all(labels[:, 1:] == np.round(outputs)[:, 1:])).sum()
-            for i in range(labels.shape[0]):
-                train_correct_mod += int(all(labels[i, 1:3] == outputs[i, 1:3]))
-            for i in range(labels.shape[0]):
-                train_correct_gain += int(all(labels[i, 3:8] == outputs[i, 3:8]))
-            for i in range(labels.shape[0]):
-                train_correct_all += int(all(labels[i, :] == outputs[i, :]))
-            # print("train_correct and train_correct_all: ", train_correct, train_correct_all)
-            # print(" Testing: ",labels[0, 1:], outputs[0, 1:], ((labels[0, 1:] == np.round(outputs)[0, 1:]).sum()), (labels[0, 1:] == np.round(outputs)[0, 1:]), int(all(labels[0, 1:] == np.round(outputs)[0, 1:])))
-
+                for i in range(labels.shape[0]):
+                    train_correct_mod += int(all(labels[i, 1:3] == outputs[i, 1:3]))
+                for i in range(labels.shape[0]):
+                    train_correct_gain += int(all(labels[i, 3:8] == outputs[i, 3:8]))
+                for i in range(labels.shape[0]):
+                    train_correct_all += int(all(labels[i, :] == outputs[i, :]))
         model.eval()
 
         test_start_time = time.time()
@@ -479,28 +528,32 @@ def single_modal_training(saved_file_name, optimizer_name = 'adam'):
             test_labels = test_labels.squeeze().cpu().detach().numpy()
 
             # CALCULATING THE TEST ACCURACY
-            test_total +=test_labels.shape[0]
-            test_correct_anomaly += (test_labels[:, 0] == test_output[:, 0]).sum()
-            for i in range(test_labels.shape[0]):
-                test_correct_mod += int(all(test_labels[i, 1:3] == test_output[i, 1:3]))
-            for i in range(test_labels.shape[0]):
-                test_correct_gain += int(all(test_labels[i, 3:8] == test_output[i, 3:8]))
-            for i in range(test_labels.shape[0]):
-                test_correct_all += int(all(test_labels[i, :] == test_output[i, :]))
+            test_total += test_labels.shape[0]
+            if args.num_classes == 2:
+                test_correct_anomaly += (np.argmax(test_labels, axis=1) == np.argmax(test_output, axis=1)).sum().item()
+            else:
+                test_correct_anomaly += (test_labels[:, 0] == test_output[:, 0]).sum()
+                for i in range(test_labels.shape[0]):
+                    test_correct_mod += int(all(test_labels[i, 1:3] == test_output[i, 1:3]))
+                for i in range(test_labels.shape[0]):
+                    test_correct_gain += int(all(test_labels[i, 3:8] == test_output[i, 3:8]))
+                for i in range(test_labels.shape[0]):
+                    test_correct_all += int(all(test_labels[i, :] == test_output[i, :]))
+
         test_acc_anomaly_detection.append(100 * test_correct_anomaly / test_total)
-        test_acc_anomaly_mod.append(100 * test_correct_mod / test_total)
-        test_acc_anomaly_gain.append(100 * test_correct_gain / test_total)
-        test_acc_anomaly_type.append(100 * test_correct_all / test_total)
+        if args.num_classes > 2:
+            test_acc_anomaly_mod.append(100 * test_correct_mod / test_total)
+            test_acc_anomaly_gain.append(100 * test_correct_gain / test_total)
+            test_acc_anomaly_type.append(100 * test_correct_all / test_total)
         test_end_time = time.time()
         print("Time to test one sample: ", (test_end_time - test_start_time)/args.bs, " seconds" )
 
         # print loss and accuracies
         if (epoch % 1 == 0): print('epoch {}, loss {} train acc of anomaly detection {} test acc of anomaly detection {}'.format(epoch, loss.data, (100 * train_correct_anomaly / train_total), (100 * test_correct_anomaly / test_total)))
-        if (epoch % 1 == 0): print('epoch {}, loss {} train acc of anomaly mod {} test acc of anomaly mod {}'.format(epoch, loss.data, (100 * train_correct_mod / train_total), (100 * test_correct_mod / test_total)))
-        if (epoch % 1 == 0): print('epoch {}, loss {} train acc of anomaly gain {} test acc of anomaly gain {}'.format(epoch, loss.data, (100 * train_correct_gain / train_total), (100 * test_correct_gain / test_total)))
-        if (epoch % 1 == 0): print('epoch {}, loss {} train acc of anomaly type {} test acc of anomaly type {}'.format(epoch,loss.data, (100 * train_correct_all / train_total),(100 * test_correct_all / test_total)))
-
-
+        if args.num_classes > 2:
+            if (epoch % 1 == 0): print('epoch {}, loss {} train acc of anomaly mod {} test acc of anomaly mod {}'.format(epoch, loss.data, (100 * train_correct_mod / train_total), (100 * test_correct_mod / test_total)))
+            if (epoch % 1 == 0): print('epoch {}, loss {} train acc of anomaly gain {} test acc of anomaly gain {}'.format(epoch, loss.data, (100 * train_correct_gain / train_total), (100 * test_correct_gain / test_total)))
+            if (epoch % 1 == 0): print('epoch {}, loss {} train acc of anomaly type {} test acc of anomaly type {}'.format(epoch,loss.data, (100 * train_correct_all / train_total),(100 * test_correct_all / test_total)))
 
     torch.save({
         'epoch': args.epochs,
@@ -511,24 +564,107 @@ def single_modal_training(saved_file_name, optimizer_name = 'adam'):
     torch.save(model, args.model_folder + '/' + saved_file_name + '.pt') # saving the whole model
 
 
+# TRAINING ON ONLY NON-CONJUGATE CSP FEATURES
 if fusion is False and "nc" in args.input and args.evaluate_only == False:
-    single_modal_training(saved_file_name, 'adam')
+    if args.classifier == 'nn':
+        single_modal_training(saved_file_name, 'adam')
+    else:
+        ytrain = np.argmax(ytrain, axis=1)
+        ytest = np.argmax(ytest, axis=1)
+        if args.classifier == 'lr':
+            clf = LogisticRegression(random_state=0).fit(xtrain, ytrain)
+        if args.classifier == 'nv':
+            clf = GaussianNB().fit(xtrain, ytrain)
+        if args.classifier == 'svm':
+            clf = svm.SVC().fit(xtrain, ytrain)
+            # score = clf.score(xtest, ytest)
+        ypred = clf.predict(xtest)
+        train_acc = clf.score(xtrain, ytrain)
+        test_acc = metrics.accuracy_score(ytest, ypred)
+        print("Test Accuracies for LTE and DSSS Detection using", args.classifier, " is :  train acc (", train_acc, ") and test acc (", test_acc, ").")
+
     print("Test Accuracies for LTE and DSSS Detection: ", test_acc_anomaly_detection)
-    print("Test Accuracies for DSSS Type Detection: ", test_acc_anomaly_type)
+    if args.num_classes > 2:
+        print("Test Accuracies for DSSS (BPSK, QPSK) Detection: ", test_acc_anomaly_mod)
+        print("Test Accuracies for DSSS Spreading Gain Detection: ", test_acc_anomaly_gain)
+        print("Test Accuracies for DSSS Type Detection: ", test_acc_anomaly_type)
     print("Final test accuracy for LTE and DSSS Detection: ", test_acc_anomaly_detection[int(args.epochs) - 1])
-    print("Final test accuracy for DSSS Type Detection: ", test_acc_anomaly_type[int(args.epochs) - 1])
+    if args.num_classes > 2:
+        print("Final test accuracy for DSSS (BPSK, QPSK) Detection: ", test_acc_anomaly_mod[int(args.epochs) - 1])
+        print("Final test accuracy for DSSS Spreading Gain Detection: ", test_acc_anomaly_gain[int(args.epochs) - 1])
+        print("Final test accuracy for DSSS Type Detection: ", test_acc_anomaly_type[int(args.epochs) - 1])
     print("End of Non-Conjugate")
 
+# TRAINING ON ONLY CONJUGATE CSP FEATURES
 if fusion is False and "c" in args.input and args.evaluate_only == False:
-    single_modal_training(saved_file_name, 'adam')
+    if args.classifier == 'nn':
+        single_modal_training(saved_file_name, 'adam')
+    else:
+        ytrain = np.argmax(ytrain, axis=1)
+        ytest = np.argmax(ytest, axis=1)
+        if args.classifier == 'lr':
+            clf = LogisticRegression(random_state=0).fit(xtrain, ytrain)
+        if args.classifier == 'nv':
+            clf = GaussianNB().fit(xtrain, ytrain)
+        if args.classifier == 'svm':
+            clf = svm.SVC().fit(xtrain, ytrain)
+            # score = clf.score(xtest, ytest)
+        ypred = clf.predict(xtest)
+        train_acc = clf.score(xtrain, ytrain)
+        test_acc = metrics.accuracy_score(ytest, ypred)
+        print("Test Accuracies for LTE and DSSS Detection using", args.classifier, " is :  train acc (", train_acc, ") and test acc (", test_acc, ").")
+
     print("Test Accuracies for LTE and DSSS Detection: ", test_acc_anomaly_detection)
-    print("Test Accuracies for DSSS Type Detection: ", test_acc_anomaly_type)
+    if args.num_classes > 2:
+        print("Test Accuracies for DSSS (BPSK, QPSK) Detection: ", test_acc_anomaly_mod)
+        print("Test Accuracies for DSSS Spreading Gain Detection: ", test_acc_anomaly_gain)
+        print("Test Accuracies for DSSS Type Detection: ", test_acc_anomaly_type)
     print("Final test accuracy for LTE and DSSS Detection: ", test_acc_anomaly_detection[int(args.epochs) - 1])
-    print("Final test accuracy for DSSS Type Detection: ", test_acc_anomaly_type[int(args.epochs) - 1])
+    if args.num_classes > 2:
+        print("Final test accuracy for DSSS (BPSK, QPSK) Detection: ", test_acc_anomaly_mod[int(args.epochs) - 1])
+        print("Final test accuracy for DSSS Spreading Gain Detection: ", test_acc_anomaly_gain[int(args.epochs) - 1])
+        print("Final test accuracy for DSSS Type Detection: ", test_acc_anomaly_type[int(args.epochs) - 1])
     print("End of Conjugate")
 
 
+# TRAINING ON IQ DATA
+if fusion is False and "iq" in args.input and args.evaluate_only == False:
+    single_modal_training(saved_file_name, 'adam')
+    print("Test Accuracies for LTE and DSSS Detection: ", test_acc_anomaly_detection)
+    print("Final test accuracy for LTE and DSSS Detection: ", test_acc_anomaly_detection[int(args.epochs) - 1])
+    print("End of I/Q")
 
+
+# TRAINING ON BOTH CONJUGATE AND NON-CONJUGATE CSP FEATURES
+if fusion is True and len(args.input) == 2 and 'nc' in args.input and 'c' in args.input and args.evaluate_only == False:
+    if args.classifier == 'nn':
+        single_modal_training(saved_file_name, 'adam')
+    else:
+        ytrain = np.argmax(ytrain, axis=1)
+        ytest = np.argmax(ytest, axis=1)
+        if args.classifier == 'lr':
+            clf = LogisticRegression(random_state=0).fit(xtrain, ytrain)
+        if args.classifier == 'nv':
+            clf = GaussianNB().fit(xtrain, ytrain)
+        if args.classifier == 'svm':
+            clf = svm.SVC().fit(xtrain, ytrain)
+            # score = clf.score(xtest, ytest)
+        ypred = clf.predict(xtest)
+        train_acc = clf.score(xtrain, ytrain)
+        test_acc = metrics.accuracy_score(ytest, ypred)
+        print("Test Accuracies for LTE and DSSS Detection using", args.classifier, " is :  train acc (", train_acc, ") and test acc (", test_acc, ").")
+
+    print("Test Accuracies for LTE and DSSS Detection: ", test_acc_anomaly_detection)
+    if args.num_classes > 2:
+        print("Test Accuracies for DSSS (BPSK, QPSK) Detection: ", test_acc_anomaly_mod)
+        print("Test Accuracies for DSSS Spreading Gain Detection: ", test_acc_anomaly_gain)
+        print("Test Accuracies for DSSS Type Detection: ", test_acc_anomaly_type)
+    print("Final test accuracy for LTE and DSSS Detection: ", test_acc_anomaly_detection[int(args.epochs) - 1])
+    if args.num_classes > 2:
+        print("Final test accuracy for DSSS (BPSK, QPSK) Detection: ", test_acc_anomaly_mod[int(args.epochs) - 1])
+        print("Final test accuracy for DSSS Spreading Gain Detection: ", test_acc_anomaly_gain[int(args.epochs) - 1])
+        print("Final test accuracy for DSSS Type Detection: ", test_acc_anomaly_type[int(args.epochs) - 1])
+    print("End of Non-Conjugate and Conjugate")
 
 ############################################################################################################
 #############################    WORKING ON FUSION ARCHITECTURES #####################################
@@ -607,18 +743,13 @@ def two_modality_training(saved_file_name, xtrain_mod1, xtrain_mod2, ytrain, xva
         'loss': loss}, args.model_folder + '/' + saved_file_name + '.pth')
 
 
-if fusion is True and len(args.input) == 2 and 'nc' in args.input and 'c' in args.input and args.evaluate_only == False:
-    single_modal_training(saved_file_name, 'adam')
-    print("Test Accuracies for LTE and DSSS Detection: ", test_acc_anomaly_detection)
-    print("Test Accuracies for DSSS (BPSK, QPSK) Detection: ", test_acc_anomaly_mod)
-    print("Test Accuracies for DSSS Spreading Gain Detection: ", test_acc_anomaly_gain)
-    print("Test Accuracies for DSSS Type Detection: ", test_acc_anomaly_type)
-    print("Final test accuracy for LTE and DSSS Detection: ", test_acc_anomaly_detection[int(args.epochs) - 1])
-    print("Final test accuracy for DSSS (BPSK, QPSK) Detection: ", test_acc_anomaly_mod[int(args.epochs) - 1])
-    print("Final test accuracy for DSSS Spreading Gain Detection: ", test_acc_anomaly_gain[int(args.epochs) - 1])
-    print("Final test accuracy for DSSS Type Detection: ", test_acc_anomaly_type[int(args.epochs) - 1])
-    print("End of Non-Conjugate and Conjugate")
 
+# TRAINING ON CONJUGATE, NON-CONJUGATE CSP FEATURES AND IQ DATA
+if fusion is True and len(args.input) == 3 and 'nc' in args.input and 'c' in args.input and 'iq' in args.input and args.evaluate_only == False:
+    two_modality_training(saved_file_name, 'adam')
+    print("Test Accuracies for LTE and DSSS Detection: ", test_acc_anomaly_detection)
+    print("Final test accuracy for LTE and DSSS Detection: ", test_acc_anomaly_detection[int(args.epochs) - 1])
+    print("End of I/Q")
 
 #########################################################################
 ######################      EVALUATE THE MODES     ######################
@@ -663,9 +794,9 @@ def evaluation(saved_file_name):
 
 if args.evaluate_only == True:
     if 'image' in args.input and fusion == False:
-        model_file_name = args.model_folder + '/best/nusc_img_visi.pt'
+        model_file_name = args.model_folder + '/best/model.pt'
     if 'radar' in args.input and fusion == False:
-        model_file_name = args.model_folder + '/best/radar.pt'
+        model_file_name = args.model_folder + '/best/model.pt'
     evaluation(model_file_name)
     pass
 

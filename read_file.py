@@ -70,6 +70,84 @@ def extract_sir_from_metadata(metadata_path, meta_filename):
                                                                                                          how='all')
     return one_label_file_df['LTE_DSSS_SIR_dB'].to_numpy()
 
+def read_iq_files(feature_path, blocks = [131072], slice_len = 256, num_classes=2, snr_list = [0, 5, 10], sir_list=[0, 5, 10]):
+    inputs = np.zeros(1)
+    labels = np.zeros(1)
+
+    metadata_path = feature_path + 'IQDataSet_LTE_DSSS_v2/Metadata/'
+    iq_path = feature_path + 'IQDataSet_LTE_DSSS_v2/IQ/'
+    # feature_path = feature_path + 'test/'
+
+    count = 0
+    only_lte_count = 0
+    lte_dsss_count = 0
+    dtype_all = scipy.dtype([('raw-iq', scipy.complex64)])  # gr_complex is '32fc' --> make any sense?
+
+    for filename in os.listdir(iq_path):
+        meta_filename = filename[::-1].split('_', 2)[-1][::-1]
+        with open(iq_path+filename, mode='rb') as file:  # b is important -> binary
+            iqdata_one_file = scipy.fromfile(file, dtype=dtype_all)
+            # fileContent = file.read()
+            # print(iqdata.real)
+        # print("Before: ", iqdata_one_file.shape)
+        iqdata_one_file = np.reshape(iqdata_one_file[:(iqdata_one_file.shape[0]//slice_len)*slice_len], (iqdata_one_file.shape[0]//slice_len,slice_len)) # discard the extra elements for uneven array
+        # print("After: ", iqdata_one_file.shape)
+        iqdata_one_file = np.expand_dims(iqdata_one_file,axis=2)
+        iqdata_one_file = np.concatenate([iqdata_one_file['raw-iq'].real,
+                                     iqdata_one_file['raw-iq'].imag], axis=2)
+
+        # print("After1: ", iqdata_one_file.shape)
+
+        if count == 0:
+            inputs = iqdata_one_file
+            # print("coming here..", inputs.shape)
+        else:
+            inputs = np.concatenate((inputs, iqdata_one_file), axis=0)
+
+        # Creating the labels: 2 Label version - commented and kept aside
+        if num_classes == 2:
+            one_file_label = np.zeros((iqdata_one_file.shape[0], num_classes))
+            if 'LTE_DSSS' in filename:
+                one_file_label[:, 1] = 1
+                lte_dsss_count = lte_dsss_count + 1
+
+            else:
+                one_file_label[:, 0] = 1
+                only_lte_count = only_lte_count + 1
+            if count == 0:
+                labels = one_file_label
+                # print("coming here too..", labels.shape)
+            else:
+                labels = np.concatenate((labels, one_file_label), axis=0)
+
+
+
+        # 7-label version
+        else:
+            one_file_label = read_and_extract_metadata(metadata_path, meta_filename, iqdata_one_file.shape[0], num_classes)
+            if count == 0:
+                labels = one_file_label
+                # print("coming here too..", labels.shape)
+            else:
+
+                labels = np.concatenate((labels, one_file_label), axis=0)
+
+            # Counting the files:
+            if 'LTE_DSSS' in filename:
+                lte_dsss_count = lte_dsss_count + 1
+            else:
+                only_lte_count = only_lte_count + 1
+            # total files
+        count = count + 1
+
+    # display DataFrame
+    print("Input shape: ", inputs.shape)
+    print("Label shape: ", labels.shape)
+    print("TOTAL READ FILES: ", count)
+    print("TOTAL LTE FILES: ", only_lte_count)
+    print("TOTAL LTE and DSSS FILES: ", lte_dsss_count)
+    return inputs, labels
+
 def read_processed_feat(feature_path, feature_type = 'nc', feature_options=[0], blocks = [131072], num_classes=2, snr_list = [0, 5, 10], sir_list=[0, 5, 10]):
     """
     This function is to load non-conjugate features in a specific session at a particular time.
@@ -126,35 +204,39 @@ def read_processed_feat(feature_path, feature_type = 'nc', feature_options=[0], 
                     inputs = np.concatenate((inputs, one_file_np), axis=0)
 
                 # Creating the labels: 2 Label version - commented and kept aside
-                # one_file_label = np.zeros((one_file_np.shape[0], 2))
-                # if 'LTE_DSSS' in filename:
-                #     one_file_label[:, 1] = 1
-                #     lte_dsss_count = lte_dsss_count +1
-                #
-                # else:
-                #     only_lte_count = only_lte_count + 1
-                # if count == 0:
-                #     labels = one_file_label
-                #     # print("coming here too..", labels.shape)
-                # else:
-                #     labels = np.concatenate((labels, one_file_label), axis=0)
-                #
-                # 8 label version
+                if num_classes == 2:
+                    one_file_label = np.zeros((one_file_np.shape[0], num_classes))
+                    if 'LTE_DSSS' in filename:
+                        one_file_label[:, 1] = 1
+                        lte_dsss_count = lte_dsss_count +1
 
-                one_file_label = read_and_extract_metadata(metadata_path, meta_filename, one_file_np.shape[0], num_classes)
-                if count == 0:
-                    labels = one_file_label
-                    # print("coming here too..", labels.shape)
+                    else:
+                        one_file_label[:, 0] = 1
+                        only_lte_count = only_lte_count + 1
+                    if count == 0:
+                        labels = one_file_label
+                        # print("coming here too..", labels.shape)
+                    else:
+                        labels = np.concatenate((labels, one_file_label), axis=0)
+
+
+
+                # 7-label version
                 else:
+                    one_file_label = read_and_extract_metadata(metadata_path, meta_filename, one_file_np.shape[0], num_classes)
+                    if count == 0:
+                        labels = one_file_label
+                        # print("coming here too..", labels.shape)
+                    else:
 
-                    labels = np.concatenate((labels, one_file_label), axis=0)
+                        labels = np.concatenate((labels, one_file_label), axis=0)
 
-                #Counting the files:
-                if 'LTE_DSSS' in filename:
-                    lte_dsss_count = lte_dsss_count +1
-                else:
-                    only_lte_count = only_lte_count + 1
-                #total files
+                    #Counting the files:
+                    if 'LTE_DSSS' in filename:
+                        lte_dsss_count = lte_dsss_count +1
+                    else:
+                        only_lte_count = only_lte_count + 1
+                    #total files
                 count = count + 1
 
 
