@@ -12,7 +12,7 @@ The model is trained on the 4th column of the non conjugate CSP features, it ski
 
 ## Example of Running an Instance of Inference:
 ~~~
-python main_inference.py --data_folder 'path\to\direction\where\the\csp\features\are\stored\
+python main_inference.py --data_folder 'path\to\direction\where\the\csp\features\are\stored\'
 ~~~
 
 ## Example Output:
