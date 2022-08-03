@@ -20,6 +20,12 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn import metrics
 from sklearn import svm
 from sklearn.utils import shuffle
+from matplotlib import pyplot as plt
+from sklearn.manifold import TSNE
+import seaborn as sns
+import pandas as pd
+
+from pthflops import count_ops
 
 import read_file
 from sklearn.model_selection import train_test_split
@@ -37,6 +43,7 @@ seed = 0
 os.environ['PYTHONHASHSEED']=str(seed)
 np.random.seed(seed)
 random.seed(seed)
+torch.manual_seed(seed)
 
 
 def str2bool(v):
@@ -65,10 +72,10 @@ def create_labels(ylabel):
 
 # Passing different arguments
 parser = argparse.ArgumentParser(description='Configure the files before training the net.')
-parser.add_argument('--data_folder', help='Location of the data directory', type=str, default= 'D:/IARPA_DATA/')
+parser.add_argument('--data_folder', help='Location of the data directory', type=str, default= '/home/royd/IARPA/')
 parser.add_argument('--input', nargs='*', default=['nc', 'iq'],choices = ['iq', 'c', 'nc'],
 help='Which data to use as input. Select from: raw IQ data, non-conjugate features, conjugate features.')
-parser.add_argument('--feature_options', nargs='*', default=[0, 1, 2, 3],choices = [0, 1, 2, 3],
+parser.add_argument('--feature_options', type = int, nargs='+', default=[0, 1, 2, 3],choices = [0, 1, 2, 3],
 help='Which features to use from the conjugate and non-conjugate files.')
 parser.add_argument('--iq_slice_len',default=131072, type=int,help='Slice length for processing IQ files') # 32
 parser.add_argument('--num_classes', default=2, type=int, help='Number of classes for classification.')
@@ -76,29 +83,29 @@ parser.add_argument('--strategy',  type=int, default =4, choices = [0, 1, 2, 3, 
 
 #Arguments for train/test on 80/20 percentage of overall data randomly
 parser.add_argument('--random_test', type=str2bool, help='Perform train/test on 80/20 of data.', default=True)
-parser.add_argument('--random_test_blocks', nargs='*', default=[131072],choices = [131072, 262144, 524288],
+parser.add_argument('--random_test_blocks', type = int, nargs='+', default=[131072],choices = [32768, 65536, 131072, 262144, 524288],
 help='The block lengths to use for random train/test.')
 
 #Arguments for training and testing on seperate block lengths
-parser.add_argument('--training_blocks', nargs='*', default=[131072],choices = [131072, 262144, 524288],
+parser.add_argument('--training_blocks', type = int, nargs='+', default=[131072],choices = [131072, 262144, 524288],
 help='Which block length to use for training.') # use this argument only if you set the 'random_test' argument as False
-parser.add_argument('--testing_blocks', nargs='*', default=[524288],choices = [131072, 262144, 524288],
+parser.add_argument('--testing_blocks', type = int, nargs='+', default=[524288],choices = [131072, 262144, 524288],
 help='Which block length to use for training.') # use this argument only if you set the 'random_test' argument as False
 
 #Arguments for training and testing on data from all block length, but test on a specific block length (exclusive from training)
 parser.add_argument('--optimal_test', type=str2bool, help='Perform training on data from all block length, but test on a specific block length (exclusive from training).', default=False)
-parser.add_argument('--optimal_test_blocks', nargs='*', default=[131072],choices = [131072, 262144, 524288],
+parser.add_argument('--optimal_test_blocks', type = int, nargs='+', default=[131072],choices = [131072, 262144, 524288],
 help='The block length of which 80/20 data is used for train/test. We use 100 percent data for training for rest of the two block lengths.')
 
 # Train and test on specific SNR values
 parser.add_argument('--random_snr_test', type=str2bool, help='Perform training on features from one SNR level and other.', default=True)
-parser.add_argument('--random_snr', nargs='*', default=[0, 5, 10],choices = [0, 5, 10],
+parser.add_argument('--random_snr', type = int, nargs='+', default=[0, 5, 10],choices = [0, 5, 10],
 help='The SNR to use for random train/test.')
-parser.add_argument('--training_snr', nargs='*', default=[5],choices = [0, 5, 10],
+parser.add_argument('--training_snr', type = int, nargs='+', default=[5],choices = [0, 5, 10],
 help='Which SNR to use for training.') # use this argument only if you set the 'random_snr_test' argument as False
-parser.add_argument('--testing_snr', nargs='*', default=[0],choices = [0, 5, 10],
+parser.add_argument('--testing_snr', type = int, nargs='+', default=[0],choices = [0, 5, 10],
 help='Which SNR to use for training.') # use this argument only if you set the 'random_snr_test' argument as False
-parser.add_argument('--dsss_sir', nargs='*', default=[0, 5, 10],choices = [0, 5, 10],
+parser.add_argument('--dsss_sir', type = int, nargs='+', default=[5],choices = [0, 5, 10],
 help='Which SIRs of DSSS to use for train/test.') # this argument will be used always #0: less challenging, 10: more challenging
 
 
@@ -109,21 +116,24 @@ parser.add_argument('--bs',default=8, type=int,help='Batch size') # 32 # 8
 parser.add_argument('--epochs', default=50, type = int, help='Specify the epochs to train')
 parser.add_argument('--normalize', help='normalize or not', type=str2bool, default =True)
 parser.add_argument('--id_gpu', default=-1, type=int, help='which gpu to use.')
-parser.add_argument('--model_folder', help='Location of the data directory', type=str, default= 'D:/IARPA_DATA/Saved_Models/')
+parser.add_argument('--model_folder', help='Location of the data directory', type=str, default= '/home/royd/IARPA/Saved_Models/')
 
 # Train and test on the data from Chad
 parser.add_argument('--real_data', type=str2bool, default=False, help='Perform training and testing on real LTE and all (synthetic+real) DSSS data from Chad.') # by default all DSSS
-parser.add_argument('--percentage_to_read', type=float, default=0.1, help='The percentage of data (from real dataset) you want to read, choose between [0-1].') # by default all DSSS
+parser.add_argument('--powder_data', type=str2bool, default=False, help='Perform training and testing on real dataset collected in POWDER.') # by default all DSSS
+parser.add_argument('--percentage_to_read', type=float, default=1, help='The percentage of data (from real dataset) you want to read, choose between [0-1].') # by default all DSSS
 parser.add_argument('--dsss_type', type=str, default='real', choices = ['all', 'real', 'synthetic'], help='Specify which type of DSSS signals you want to use for training and testing.')
 parser.add_argument('--meta_learning', type=str2bool, default=False, help='Perform meta learning from trained model on synthetic data to real data.')
 parser.add_argument('--no_of_layers_to_freeze',  type=int, default =1, choices = [0, 1, 2, 3, 4], help="Specify the number of layers you want to freeze from the starting of the model.")
 parser.add_argument('--retrain_ratio',  type=float, default =0.1, choices = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], help="Specify the percentage of retraining would be done for meta learning.")
-parser.add_argument('--model_file', help='Location of the model file (with directory)', type=str, default= 'D:/IARPA_DATA/Saved_Models/block_wise_trained_model_on_sythetic_dataset_strategy5/non_conjugate_131072.pt')
-
-# Not being used so far
+parser.add_argument('--model_file', help='Location of the model file (with directory)', type=str, default= '/home/royd/IARPA/Saved_Models/block_wise_trained_model_on_sythetic_dataset_strategy5/non_conjugate_131072.pt')
+parser.add_argument('--fusion_layer', type=str, default='penultimate', help='Assign the layer name where the fusion to be performed.')
 parser.add_argument('--restore_models', type=str2bool, help='Load single modality trained weights', default=False)
 parser.add_argument('--retrain', type=str2bool, help='Retrain the model on loaded weights', default=True)
-parser.add_argument('--fusion_layer', type=str, default='ultimate', help='Assign the layer name where the fusion to be performed.')
+parser.add_argument('--slicing', type=str2bool, help='Perform slicing of the I/Q signals for accelerated training', default=False)
+parser.add_argument('--slice_length', type=int, help='The length of the slices.', default=256)
+
+# Not being used so far
 parser.add_argument('--incremental_fusion', type=str2bool, help='Perform the incremental fusion or not. By default it will be aggregative fusion.', default=False)
 parser.add_argument('--state_fusions', type=str2bool, help='Perform the state-of-the-art fusions.', default=True)
 parser.add_argument('--fusion_techniques', nargs='*', default=['mi'],choices = ['mi', 'lr_tensor', 'concat'],
@@ -150,57 +160,64 @@ all_block_lengths = [131072, 262144, 524288]
 if len(args.input) >=2:
     # train/test on a specific block length for CSP features and train/test on random SNR
     if args.real_data == True:
-        inputs_iq, inputs_c, inputs_nc, labels = read_file.generate_inputs_labels_real_data(args.data_folder, args.input, args.feature_options, args.iq_slice_len, args.num_classes, args.random_snr, args.dsss_sir, args.strategy, args.dsss_type, args.percentage_to_read)
+        inputs_iq, inputs_c, inputs_nc, labels = read_file.generate_inputs_labels_IQ_NC_C_for_NWRA_dataset(args.data_folder, args.input, args.feature_options, args.iq_slice_len, args.num_classes, args.random_snr, args.dsss_sir, args.strategy, args.dsss_type, args.percentage_to_read, args.slicing, args.slice_length)
+    elif args.powder_data == True:
+        inputs_iq, inputs_c, inputs_nc, labels = read_file.generate_inputs_labels_IQ_NC_C_POWDER_dataset(args.data_folder, args.input, args.feature_options, args.iq_slice_len, args.num_classes, args.strategy, args.percentage_to_read, args.slicing, args.slice_length)
+
     else:
-        inputs_iq, inputs_c, inputs_nc, labels = read_file.generate_inputs_labels_synthetic_data(args.data_folder,
-                                                                                                 args.input,
-                                                                                                 args.feature_options,
-                                                                                                 args.iq_slice_len,
-                                                                                                 args.num_classes,
-                                                                                                 args.random_snr,
-                                                                                                 args.dsss_sir,
-                                                                                                 args.strategy,
-                                                                                                 args.percentage_to_read)
+        inputs_iq, inputs_c, inputs_nc, labels = read_file.generate_inputs_labels_IQ_NC_C_NEU_dataset(args.data_folder,
+                                                                                                      args.input,
+                                                                                                      args.feature_options,
+                                                                                                      args.iq_slice_len,
+                                                                                                      args.num_classes,
+                                                                                                      args.random_snr,
+                                                                                                      args.dsss_sir,
+                                                                                                      args.strategy,
+                                                                                                      args.percentage_to_read, args.slicing, args.slice_length)
     print("Shaped of the inputs and labels: ", inputs_iq.shape, inputs_c.shape, inputs_nc.shape, labels.shape)
 else: # reading each CSP features and IQ files seperately (old implementation)
     print("**********************************************************")
     if 'nc' in args.input:
         if args.real_data == True:
-            inputs_nc, labels_nc, input_label_dic = read_file.read_processed_feat_real_data(args.data_folder, 'nc', args.feature_options,
-                                                                 args.random_test_blocks, args.num_classes, args.strategy, args.dsss_type)
+            inputs_nc, labels_nc, input_label_dic = read_file.generate_inputs_labels_NC_C_for_NWRA_dataset(args.data_folder, 'nc', args.feature_options,
+                                                                                                           args.random_test_blocks, args.num_classes, args.strategy, args.dsss_type)
+        elif args.powder_data == True:
+            inputs_iq, inputs_c, inputs_nc, labels = read_file.generate_inputs_labels_IQ_NC_C_POWDER_dataset(
+                args.data_folder, 'nc', args.feature_options, args.iq_slice_len, args.num_classes, args.strategy,
+                args.percentage_to_read, args.slicing, args.slice_length)
         else:
             if args.random_test == True: # 80/20 train/test on specific block lengths
                 if args.random_snr_test == True:
-                    inputs_nc, labels_nc, input_label_dic = read_file.read_processed_feat(args.data_folder, 'nc', args.feature_options, args.random_test_blocks, args.num_classes, args.random_snr, args.dsss_sir, args.strategy)
+                    inputs_nc, labels_nc, input_label_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'nc', args.feature_options, args.random_test_blocks, args.num_classes, args.random_snr, args.dsss_sir, args.strategy)
                     print("Shapes of the non-conjugate features and labels: ", inputs_nc.shape, labels_nc.shape)
                 else: # if we train on one SNR and test on other snrs
-                    xtrain_nc, ytrain_nc, input_label_train_dic = read_file.read_processed_feat(args.data_folder, 'nc', args.feature_options,
-                                                                         args.random_test_blocks, args.num_classes,
-                                                                         args.training_snr, args.dsss_sir, args.strategy)
-                    xtest_nc, ytest_nc, input_label_test_dic = read_file.read_processed_feat(args.data_folder, 'nc',
-                                                                                      args.feature_options,
-                                                                                      args.random_test_blocks, args.num_classes,
-                                                                                      args.testing_snr, args.dsss_sir, args.strategy)
+                    xtrain_nc, ytrain_nc, input_label_train_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'nc', args.feature_options,
+                                                                                                                        args.random_test_blocks, args.num_classes,
+                                                                                                                        args.training_snr, args.dsss_sir, args.strategy)
+                    xtest_nc, ytest_nc, input_label_test_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'nc',
+                                                                                                                     args.feature_options,
+                                                                                                                     args.random_test_blocks, args.num_classes,
+                                                                                                                     args.testing_snr, args.dsss_sir, args.strategy)
                     print("Shapes of the non-conjugate features and labels: ", xtrain_nc.shape, ytrain_nc.shape, xtest_nc.shape, ytest_nc.shape)
             elif args.optimal_test==True: # test on 50% data of specific block length and train on rest of 50% of that bloack length, along with rest two block length
                 rest_block_lengths = [x for x in all_block_lengths if x not in args.optimal_test_blocks]
                     # all_block_lengths - args.optimal_test_blocks
                 # print(rest_block_lengths)
                 if args.random_snr_test == True:
-                    inputs_nc, labels_nc, input_label_dic = read_file.read_processed_feat(args.data_folder, 'nc', args.feature_options,
-                                                                         rest_block_lengths, args.num_classes, args.random_snr, args.dsss_sir, args.strategy)
+                    inputs_nc, labels_nc, input_label_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'nc', args.feature_options,
+                                                                                                                  rest_block_lengths, args.num_classes, args.random_snr, args.dsss_sir, args.strategy)
                     # print("Shapes*************: ", inputs_nc.shape)
-                    input_test_nc, labels_test_nc, input_label_test_dic = read_file.read_processed_feat(args.data_folder, 'nc', args.feature_options,
-                                                                       args.optimal_test_blocks, args.num_classes,  args.random_snr, args.dsss_sir, args.strategy)
+                    input_test_nc, labels_test_nc, input_label_test_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'nc', args.feature_options,
+                                                                                                                                args.optimal_test_blocks, args.num_classes, args.random_snr, args.dsss_sir, args.strategy)
                     xhalf_train_nc, xtest_nc, yhalf_train_nc, ytest_nc = train_test_split(input_test_nc, labels_test_nc, test_size=0.2, random_state=42)
                 else: # if we train on one SNR and test on other snrs
-                    inputs_nc, labels_nc, input_label_dic = read_file.read_processed_feat(args.data_folder, 'nc', args.feature_options,
-                                                                         rest_block_lengths, args.num_classes, args.training_snr, args.dsss_sir, args.strategy)
-                    xhalf_train_nc, yhalf_train_nc, input_label_train_dic = read_file.read_processed_feat(args.data_folder, 'nc', args.feature_options,
-                                                                                  args.optimal_test_blocks, args.num_classes,
-                                                                                  args.training_snr, args.dsss_sir, args.strategy) # training the
-                    xtest_nc, ytest_nc, input_label_test_dic = read_file.read_processed_feat(args.data_folder, 'nc', args.feature_options,
-                                                                         args.optimal_test_blocks, args.num_classes, args.testing_snr, args.dsss_sir, args.strategy)
+                    inputs_nc, labels_nc, input_label_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'nc', args.feature_options,
+                                                                                                                  rest_block_lengths, args.num_classes, args.training_snr, args.dsss_sir, args.strategy)
+                    xhalf_train_nc, yhalf_train_nc, input_label_train_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'nc', args.feature_options,
+                                                                                                                                  args.optimal_test_blocks, args.num_classes,
+                                                                                                                                  args.training_snr, args.dsss_sir, args.strategy) # training the
+                    xtest_nc, ytest_nc, input_label_test_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'nc', args.feature_options,
+                                                                                                                     args.optimal_test_blocks, args.num_classes, args.testing_snr, args.dsss_sir, args.strategy)
                     # xhalf_train_nc, xtest_nc, yhalf_train_nc, ytest_nc = train_test_split(input_test_nc, labels_test_nc, test_size=0.5,
                     #                                                 random_state=42)
                 # print("Shapes: ", inputs_nc.shape, xhalf_train_nc.shape )
@@ -216,33 +233,37 @@ else: # reading each CSP features and IQ files seperately (old implementation)
                 else:
                     training_snrs = args.training_snr
                     testing_snrs = args.testing_snr
-                xtrain_nc, ytrain_nc, input_label_train_dic = read_file.read_processed_feat(args.data_folder, 'nc', args.feature_options,args.training_blocks, args.num_classes, training_snrs, args.dsss_sir, args.strategy)
-                xtest_nc, ytest_nc, input_label_test_dic = read_file.read_processed_feat(args.data_folder, 'nc', args.feature_options,args.testing_blocks, args.num_classes,  testing_snrs, args.dsss_sir, args.strategy)
+                xtrain_nc, ytrain_nc, input_label_train_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'nc', args.feature_options, args.training_blocks, args.num_classes, training_snrs, args.dsss_sir, args.strategy)
+                xtest_nc, ytest_nc, input_label_test_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'nc', args.feature_options, args.testing_blocks, args.num_classes, testing_snrs, args.dsss_sir, args.strategy)
 
                 print("Shapes of the non-conjugate train, test features and labels: ", xtrain_nc.shape, xtest_nc.shape, ytrain_nc.shape, ytest_nc.shape)
-        saved_file_name = 'non_conjugate'
+        saved_file_name = 'non_conjugate_'+str(args.random_test_blocks[0])
 
 
     if 'c' in args.input:
         if args.real_data == True:
-            inputs_c, labels_c, input_label_dic = read_file.read_processed_feat_real_data(args.data_folder, 'c', args.feature_options,
-                                                                 args.random_test_blocks, args.num_classes, args.strategy, args.dsss_type)
+            inputs_c, labels_c, input_label_dic = read_file.generate_inputs_labels_NC_C_for_NWRA_dataset(args.data_folder, 'c', args.feature_options,
+                                                                                                         args.random_test_blocks, args.num_classes, args.strategy, args.dsss_type)
+        elif args.powder_data == True:
+            inputs_iq, inputs_c, inputs_nc, labels = read_file.generate_inputs_labels_IQ_NC_C_POWDER_dataset(
+                args.data_folder, 'c', args.feature_options, args.iq_slice_len, args.num_classes, args.strategy,
+                args.percentage_to_read, args.slicing, args.slice_length)
         else:
             if args.random_test == True:  # 80/20 train/test on specific block lengths
                 if args.random_snr_test == True:
-                    inputs_c, labels_c, input_label_dic = read_file.read_processed_feat(args.data_folder, 'c', args.feature_options,
-                                                                         args.random_test_blocks, args.num_classes,
-                                                                         args.random_snr, args.dsss_sir, args.strategy)
+                    inputs_c, labels_c, input_label_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'c', args.feature_options,
+                                                                                                                args.random_test_blocks, args.num_classes,
+                                                                                                                args.random_snr, args.dsss_sir, args.strategy)
                     print("Shapes of the conjugate features and labels: ", inputs_c.shape, labels_c.shape)
                 else:  # if we train on one SNR and test on other snrs
-                    xtrain_c, ytrain_c, input_label_train_dic = read_file.read_processed_feat(args.data_folder, 'c',
-                                                                                     args.feature_options,
-                                                                                     args.random_test_blocks, args.num_classes,
-                                                                                     args.training_snr, args.dsss_sir, args.strategy)
-                    xtest_c, ytest_c, input_label_test_dic = read_file.read_processed_feat(args.data_folder, 'c',
-                                                                                   args.feature_options,
-                                                                                   args.random_test_blocks, args.num_classes,
-                                                                                   args.testing_snr, args.dsss_sir, args.strategy)
+                    xtrain_c, ytrain_c, input_label_train_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'c',
+                                                                                                                      args.feature_options,
+                                                                                                                      args.random_test_blocks, args.num_classes,
+                                                                                                                      args.training_snr, args.dsss_sir, args.strategy)
+                    xtest_c, ytest_c, input_label_test_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'c',
+                                                                                                                   args.feature_options,
+                                                                                                                   args.random_test_blocks, args.num_classes,
+                                                                                                                   args.testing_snr, args.dsss_sir, args.strategy)
                     print("Shapes of the conjugate features and labels: ", xtrain_c.shape, ytrain_c.shape,
                           xtest_c.shape, ytest_c.shape)
             elif args.optimal_test == True:  # test on 50% data of specific block length and train on rest of 50% of that bloack length, along with rest two block length
@@ -250,23 +271,23 @@ else: # reading each CSP features and IQ files seperately (old implementation)
                 # all_block_lengths - args.optimal_test_blocks
                 # print(rest_block_lengths)
                 if args.random_snr_test == True:
-                    inputs_c, labels_c, input_label_dic = read_file.read_processed_feat(args.data_folder, 'c', args.feature_options,
-                                                                         rest_block_lengths, args.num_classes, args.random_snr, args.dsss_sir, args.strategy)
-                    input_test_c, labels_test_c, input_label_test_dic = read_file.read_processed_feat(args.data_folder, 'c', args.feature_options,
-                                                                                  args.optimal_test_blocks, args.num_classes,
-                                                                                  args.random_snr, args.dsss_sir, args.strategy)
+                    inputs_c, labels_c, input_label_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'c', args.feature_options,
+                                                                                                                rest_block_lengths, args.num_classes, args.random_snr, args.dsss_sir, args.strategy)
+                    input_test_c, labels_test_c, input_label_test_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'c', args.feature_options,
+                                                                                                                              args.optimal_test_blocks, args.num_classes,
+                                                                                                                              args.random_snr, args.dsss_sir, args.strategy)
                     xhalf_train_c, xtest_c, yhalf_train_c, ytest_c = train_test_split(input_test_c, labels_test_c,
                                                                                           test_size=0.2, random_state=42)
                 else:
-                    inputs_c, labels_c, input_label_dic = read_file.read_processed_feat(args.data_folder, 'c', args.feature_options,
-                                                                         rest_block_lengths, args.num_classes,
-                                                                         args.training_snr, args.dsss_sir, args.strategy)
-                    xhalf_train_c, yhalf_train_c, input_label_train_dic = read_file.read_processed_feat(args.data_folder, 'c', args.feature_options,
-                                                                                   args.optimal_test_blocks, args.num_classes,
-                                                                                   args.training_snr, args.dsss_sir, args.strategy) # training the
-                    xtest_c, ytest_c = read_file.read_processed_feat(args.data_folder, 'c', args.feature_options,
-                                                                       args.optimal_test_blocks, args.num_classes,
-                                                                       args.testing_snr, args.dsss_sir, args.strategy)
+                    inputs_c, labels_c, input_label_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'c', args.feature_options,
+                                                                                                                rest_block_lengths, args.num_classes,
+                                                                                                                args.training_snr, args.dsss_sir, args.strategy)
+                    xhalf_train_c, yhalf_train_c, input_label_train_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'c', args.feature_options,
+                                                                                                                                args.optimal_test_blocks, args.num_classes,
+                                                                                                                                args.training_snr, args.dsss_sir, args.strategy) # training the
+                    xtest_c, ytest_c = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'c', args.feature_options,
+                                                                                             args.optimal_test_blocks, args.num_classes,
+                                                                                             args.testing_snr, args.dsss_sir, args.strategy)
                 xtrain_c = np.concatenate((inputs_c, xhalf_train_c), axis=0)
                 ytrain_c = np.concatenate((labels_c, yhalf_train_c), axis=0)
                 print("Shapes of the conjugate train, test features and labels: ", xtrain_c.shape, xtest_c.shape,
@@ -279,31 +300,35 @@ else: # reading each CSP features and IQ files seperately (old implementation)
                 else:
                     training_snrs = args.training_snr
                     testing_snrs = args.testing_snr
-                xtrain_c, ytrain_c, input_label_train_dic = read_file.read_processed_feat(args.data_folder, 'c', args.feature_options,
-                                                                     args.training_blocks, args.num_classes, training_snrs, args.dsss_sir, args.strategy)
-                xtest_c, ytest_c, input_label_test_dic = read_file.read_processed_feat(args.data_folder, 'c', args.feature_options,
-                                                                   args.testing_blocks, args.num_classes, testing_snrs, args.dsss_sir, args.strategy)
+                xtrain_c, ytrain_c, input_label_train_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'c', args.feature_options,
+                                                                                                                  args.training_blocks, args.num_classes, training_snrs, args.dsss_sir, args.strategy)
+                xtest_c, ytest_c, input_label_test_dic = read_file.generate_inputs_labels_NC_C_for_NEU_dataset(args.data_folder, 'c', args.feature_options,
+                                                                                                               args.testing_blocks, args.num_classes, testing_snrs, args.dsss_sir, args.strategy)
 
                 print("Shapes of the conjugate train, test features and labels: ", xtrain_c.shape, xtest_c.shape,
                       ytrain_c.shape, ytest_c.shape)
-        saved_file_name = 'conjugate'
+        saved_file_name = 'conjugate_'+str(args.random_test_blocks[0])
 
     # reading IQ features
     if 'iq' in args.input:
         if args.real_data == True:
-            inputs_iq, labels_iq = read_file.read_real_iq_files(args.data_folder, args.random_test_blocks, args.iq_slice_len, args.num_classes, args.random_snr, args.dsss_sir, args.dsss_type, args.percentage_to_read)
-            print("Shapes of the IQ files and labels: ", inputs_iq.shape, labels_iq.shape)
+            inputs_iq, labels = read_file.generate_inputs_labels_IQ_for_NWRA_dataset(args.data_folder, args.random_test_blocks, args.iq_slice_len, args.num_classes, args.random_snr, args.dsss_sir, args.dsss_type, args.percentage_to_read, args.slicing, args.slice_length)
+            print("Shapes of the IQ files and labels: ", inputs_iq.shape, labels.shape)
+        elif args.powder_data == True:
+            inputs_iq, inputs_c, inputs_nc, labels = read_file.generate_inputs_labels_IQ_NC_C_POWDER_dataset(
+                args.data_folder, 'iq', args.feature_options, args.iq_slice_len, args.num_classes, args.strategy,
+                args.percentage_to_read, args.slicing, args.slice_length)
         else:
             if args.random_snr_test == True:
-                inputs_iq, labels_iq = read_file.read_iq_files(args.data_folder, args.random_test_blocks, args.iq_slice_len, args.num_classes, args.random_snr, args.dsss_sir, args.percentage_to_read)
-                print("Shapes of the IQ files and labels: ", inputs_iq.shape, labels_iq.shape)
+                inputs_iq, labels = read_file.generate_inputs_labels_IQ_for_NEU_dataset(args.data_folder, args.random_test_blocks, args.iq_slice_len, args.num_classes, args.random_snr, args.dsss_sir, args.percentage_to_read, args.slicing, args.slice_length)
+                print("Shapes of the IQ files and labels: ", inputs_iq.shape, labels.shape)
             else:  # if we train on one SNR and test on other snrs
-                xtrain_iq, ytrain_iq = read_file.read_iq_files(args.data_folder, args.random_test_blocks, args.iq_slice_len, args.num_classes, args.training_snrs, args.dsss_sir, args.percentage_to_read)
-                xtest_iq, ytest_iq = read_file.read_iq_files(args.data_folder, args.random_test_blocks, args.iq_slice_len, args.num_classes, args.testing_snrs, args.dsss_sir, args.percentage_to_read)
+                xtrain_iq, ytrain_iq = read_file.generate_inputs_labels_IQ_for_NEU_dataset(args.data_folder, args.random_test_blocks, args.iq_slice_len, args.num_classes, args.training_snrs, args.dsss_sir, args.percentage_to_read, args.slicing, args.slice_length)
+                xtest_iq, ytest_iq = read_file.generate_inputs_labels_IQ_for_NEU_dataset(args.data_folder, args.random_test_blocks, args.iq_slice_len, args.num_classes, args.testing_snrs, args.dsss_sir, args.percentage_to_read, args.slicing, args.slice_length)
                 print("Shapes of the IQ files and labels: ", xtrain_iq.shape, ytrain_iq.shape,
                           xtest_iq.shape, ytest_iq.shape)
 
-        saved_file_name = 'IQ'
+        saved_file_name = 'IQ_' + str(args.iq_slice_len)
 ##############################################################################
 # Model configuration
 ##############################################################################
@@ -351,7 +376,10 @@ if fusion == False:
         #     xtrain, xtest, ytrain, ytest = train_test_split(inputs, labels, test_size=0.2,
         #                                                     random_state=42)  # 80/20 is train/test size
 
-        if args.real_data == True:
+        if args.powder_data == True:
+            inputs = inputs_nc
+            xtrain, xtest, ytrain, ytest = train_test_split(inputs, labels, test_size=0.2, random_state=42)
+        elif args.real_data == True:
             inputs = inputs_nc
             labels = labels_nc
             if args.strategy == 1: inputs, labels = input_label_for_strategy2(input_label_dic) # this will be triggered only for strategy 2 for CSP features
@@ -404,7 +432,10 @@ if fusion == False:
 
 
     if 'c' in args.input:
-        if args.real_data == True:
+        if args.powder_data == True:
+            inputs = inputs_c
+            xtrain, xtest, ytrain, ytest = train_test_split(inputs, labels, test_size=0.2, random_state=42)
+        elif  args.real_data == True:
             inputs = inputs_c
             labels = labels_c
             xtrain, xtest, ytrain, ytest = train_test_split(inputs, labels, test_size=0.2,
@@ -433,7 +464,7 @@ if fusion == False:
         # This will be triggered when doing train/test split randomly on whole data
         if args.random_snr_test == True:
             inputs = inputs_iq
-            labels = labels_iq
+            labels = labels
             xtrain, xtest, ytrain, ytest = train_test_split(inputs, labels, test_size=0.2,
                                                                 random_state=42)  # 80/20 is train/test size
         else:
@@ -459,6 +490,7 @@ if fusion == False:
     model.apply(weights_init)
 else: # incase of fusion
     # considering both conjugate and non-conjugate CSP features
+    # This will not be used in powder dataset
     if 'c' in args.input and 'nc' in args.input and 'iq' not in args.input:
         if args.random_test == True or args.real_data == True: # This will be triggered when doing train/test split randomly on whole data
             inputs = np.concatenate((inputs_nc, inputs_c), axis=0)
@@ -473,16 +505,49 @@ else: # incase of fusion
 
         model = FeatureNet(input_dim=xtrain.shape[1], output_dim=args.num_classes)
         # model = NonConjugateNet(input_dim=xtrain.shape[1], output_dim=args.num_classes)
-        saved_file_name = 'conjugate_non_conjugate'
+        saved_file_name = 'conjugate_non_conjugate_'+args.random_test_blocks[0]
 
     # considering IQ, conjugate CSP features
     if 'iq' in args.input and 'c' in args.input and 'nc' not in args.input:
         xtrain_iq, xtest_iq, xtrain_c, xtest_c, ytrain, ytest = train_test_split(inputs_iq, inputs_c, labels, test_size=0.2, random_state=42)
         modelA = AlexNet1D(input_dim=xtrain_iq.shape[2], output_dim=args.num_classes, fusion=args.fusion_layer)
         # modelB = CSPNet(input_dim=xtrain_c.shape[1])
-        modelB = FeatureNet(input_dim=xtrain_c.shape[1], output_dim=args.num_classes)
+        modelB = FeatureNet(input_dim=xtrain_c.shape[1], output_dim=args.num_classes, fusion=args.fusion_layer)
+
+        ############# LOADING THE MODELS ##########################
+        if args.restore_models == True:
+            # print("Entering in restore model..")
+            if args.slicing == True:
+                iq_file_name = args.model_folder + 'NWRA_dataset_models/Slice_256/IQ_' + str(args.iq_slice_len) + '.pt'
+            else:
+                iq_file_name = args.model_folder + 'NWRA_dataset_models/IQ_' + str(args.iq_slice_len) + '.pt'
+            c_file_name = args.model_folder + 'NWRA_dataset_models/conjugate_' + str(args.iq_slice_len) + '.pt'
+
+            if args.fusion_layer == 'penultimate':
+                mA = torch.load(iq_file_name)
+                modelA = torch.nn.Sequential(*(list(mA.children())[:-1]))
+                mB = torch.load(c_file_name)
+                modelB = torch.nn.Sequential(*(list(mB.children())[:-1]))
+            else:
+                modelA = torch.load(iq_file_name)
+                modelB = torch.load(c_file_name)
+            print("LOADED THE MODELS FOR I/Q and Conjugate")
+
+        # FREEZING THE WEIGHTS BEFORE THE FUSION LAYERS
+        if args.retrain == False:
+            print("FREEZING THE WEIGHTS BEFORE FUSION LAYERS")
+            for c in modelA.children():
+                for param in c.parameters():
+                    param.requires_grad = False
+            for c in modelB.children():
+                for param in c.parameters():
+                    param.requires_grad = False
+
+        ###########################################################
+
+
         model = FeatureFusion(modelA, modelB, nb_classes=args.num_classes, fusion=args.fusion_layer)
-        saved_file_name = 'conjugate_iq'
+        saved_file_name = 'conjugate_iq_'+str(args.iq_slice_len)
 
         #################### NORMALIZE THE X DATA #######################
         if args.normalize == True:
@@ -509,9 +574,40 @@ else: # incase of fusion
                 inputs_iq, inputs_nc, labels, test_size=0.2, random_state=42)
         modelA = AlexNet1D(input_dim=xtrain_iq.shape[2], output_dim=args.num_classes, fusion=args.fusion_layer)
         # modelB = CSPNet(input_dim=xtrain_nc.shape[1])
-        modelB = FeatureNet(input_dim=xtrain_nc.shape[1], output_dim=args.num_classes)
+        modelB = FeatureNet(input_dim=xtrain_nc.shape[1], output_dim=args.num_classes, fusion=args.fusion_layer)
+
+        ############# LOADING THE MODELS ##########################
+        if args.restore_models == True:
+            # print("Entering in restore model..")
+            if args.slicing == True: iq_file_name = args.model_folder + 'NWRA_dataset_models/Slice_256/IQ_'+str(args.iq_slice_len)+'.pt'
+            else: iq_file_name = args.model_folder + 'NWRA_dataset_models/IQ_' + str(args.iq_slice_len) + '.pt'
+            nc_file_name = args.model_folder + 'NWRA_dataset_models/non_conjugate_'+str(args.iq_slice_len)+'.pt'
+
+            if args.fusion_layer == 'penultimate':
+                mA = torch.load(iq_file_name)
+                modelA = torch.nn.Sequential(*(list(mA.children())[:-1]))
+                mB = torch.load(nc_file_name)
+                modelB = torch.nn.Sequential(*(list(mB.children())[:-1]))
+            else:
+                modelA = torch.load(iq_file_name)
+                modelB = torch.load(nc_file_name)
+            print("LOADED THE MODELS FOR I/Q and Non-conjugate")
+
+        # FREEZING THE WEIGHTS BEFORE THE FUSION LAYERS
+        if args.retrain == False:
+            print("FREEZING THE WEIGHTS BEFORE FUSION LAYERS")
+            for c in modelA.children():
+                for param in c.parameters():
+                    param.requires_grad = False
+            for c in modelB.children():
+                for param in c.parameters():
+                    param.requires_grad = False
+
+        ###########################################################
+
+
         model = FeatureFusion(modelA, modelB, nb_classes=args.num_classes, fusion=args.fusion_layer)
-        saved_file_name = 'non_conjugate_iq'
+        saved_file_name = 'non_conjugate_iq_'+str(args.iq_slice_len)
 
         #################### NORMALIZE THE X DATA #######################
         if args.normalize == True:
@@ -537,10 +633,10 @@ else: # incase of fusion
         modelA = AlexNet1D(input_dim=xtrain_iq.shape[2], output_dim=args.num_classes, fusion=args.fusion_layer)
         # modelB = CSPNet(input_dim=xtrain_c.shape[1])
         # modelC = CSPNet(input_dim=xtrain_nc.shape[1])
-        modelB = FeatureNet(input_dim=xtrain_c.shape[1], output_dim=args.num_classes)
-        modelC = FeatureNet(input_dim=xtrain_nc.shape[1], output_dim=args.num_classes)
+        modelB = FeatureNet(input_dim=xtrain_c.shape[1], output_dim=args.num_classes, fusion=args.fusion_layer)
+        modelC = FeatureNet(input_dim=xtrain_nc.shape[1], output_dim=args.num_classes, fusion=args.fusion_layer)
         model = FeatureFusionThree(modelA, modelB, modelC, nb_classes=args.num_classes, fusion=args.fusion_layer)
-        saved_file_name = 'conjugate_non_conjugate_iq'
+        saved_file_name = 'conjugate_non_conjugate_iq_'+str(args.iq_slice_len)
 
         #################### NORMALIZE THE X DATA #######################
         if args.normalize == True:
@@ -627,6 +723,41 @@ if use_cuda and args.id_gpu>=0:
     model.cuda()
 else:
     device = torch.device("cpu")
+
+
+######################### TSNE PLOT GENERATOR ##############
+
+def tsne_plot_generator(features_tsne, y_value, saved_file_name):
+    # Fit and transform with a TSNE
+    tsne = TSNE(n_components=2, verbose=1, perplexity=20, n_iter=300,random_state=0)
+
+
+    # Project the data in 2D
+    tsne_results = tsne.fit_transform(features_tsne)
+    df = pd.DataFrame()
+    df['y'] = y_value
+    df['Dim1'] = tsne_results[:,0]
+    df['Dim2'] = tsne_results[:,1]
+
+    print(df.shape)
+
+    df_subset = df.loc[df["y"]>-1]
+    # print(data.shape)
+    # plt.figure()
+    sns.set(font_scale = 2)
+    ax = sns.scatterplot(
+      x="Dim1", y="Dim2",
+      hue="y",
+      palette=sns.color_palette("hls", len(np.unique(y_value))),
+      data=df_subset,
+      legend="full"
+    )
+    handles, labels  =  ax.get_legend_handles_labels()
+
+    ax.legend(handles, ['LTE', 'LTE+DSSS'])
+
+    plt.savefig('t-SNE/'+saved_file_name+'_tsne.png',bbox_inches='tight',dpi=400)
+
 
 
 # DATALOADER FOR THREE MODALITY FUSION
@@ -754,7 +885,7 @@ def single_modal_training(saved_file_name):
             # print("test in training: ", train_batch.shape, train_labels.shape)
             train_batch, train_labels = train_batch.float().to(device), train_labels.float().to(device)
 
-            outputs = model(train_batch)
+            outputs, _ = model(train_batch)
             loss = criterion(outputs, torch.max(train_labels, 1)[1])
 
             # Backward and optimize
@@ -782,16 +913,22 @@ def single_modal_training(saved_file_name):
 
         test_start_time = time.time()
         # Test
+        # To create the t-SNE plots
+        features_tsne = np.zeros(1)
+        y_tsne = np.zeros(1)
+        test_batch_count = 0
         for test_batch, test_labels in test_generator:
             test_batch, test_labels = test_batch.float().to(device), test_labels.float().to(device)
-            test_output = model(test_batch)
+            test_output, latent_features = model(test_batch)
+            
+            #print("The number of FLOPS:",  count_ops(model, test_batch))
 
             test_output = test_output.cpu().detach().numpy()
             test_labels = test_labels.squeeze().cpu().detach().numpy()
 
             # CALCULATING THE TEST ACCURACY
             test_total += test_labels.shape[0]
-            # print("********* Sanity check: ", np.argmax(test_output, axis=1))
+            print("Sanity check:", np.argmax(test_labels, axis=1),  np.argmax(test_output, axis=1))
             if args.num_classes == 2:
                 test_correct_anomaly += (np.argmax(test_labels, axis=1) == np.argmax(test_output, axis=1)).sum().item()
             else:
@@ -802,6 +939,18 @@ def single_modal_training(saved_file_name):
                     test_correct_gain += int(all(test_labels[i, 3:8] == test_output[i, 3:8]))
                 for i in range(test_labels.shape[0]):
                     test_correct_all += int(all(test_labels[i, :] == test_output[i, :]))
+
+            ############################ t-SNE PLOT ##############################
+            if test_batch_count == 0:
+                features_tsne = latent_features.cpu().detach().numpy()
+                y_tsne = np.argmax(test_output, axis=1)
+            else:
+                features_tsne = np.concatenate ((features_tsne, latent_features.cpu().detach().numpy()), axis = 0)
+                y_tsne = np.concatenate ((y_tsne, np.argmax(test_output, axis=1)), axis = 0)
+            
+            test_batch_count += 1
+            ##############################################################
+
 
         test_acc_anomaly_detection.append(100 * test_correct_anomaly / test_total)
         if args.num_classes > 2:
@@ -819,6 +968,8 @@ def single_modal_training(saved_file_name):
             if (epoch % 1 == 0): print('epoch {}, loss {} train acc of anomaly gain {} test acc of anomaly gain {}'.format(epoch, loss.data, (100 * train_correct_gain / train_total), (100 * test_correct_gain / test_total)))
             if (epoch % 1 == 0): print('epoch {}, loss {} train acc of anomaly type {} test acc of anomaly type {}'.format(epoch,loss.data, (100 * train_correct_all / train_total),(100 * test_correct_all / test_total)))
 
+    # Plotting the features in t-SNE format 
+    tsne_plot_generator(features_tsne, y_tsne, saved_file_name)
     torch.save({
         'epoch': args.epochs,
         'model_state_dict': model.state_dict(),
@@ -847,16 +998,10 @@ if fusion is False and "nc" in args.input:
         test_acc = metrics.accuracy_score(ytest, ypred)
         print("Test Accuracies for LTE and DSSS Detection using", args.classifier, " is :  train acc (", train_acc, ") and test acc (", test_acc, ").")
 
-    print("Test Accuracies for LTE and DSSS Detection: ", test_acc_anomaly_detection)
-    if args.num_classes > 2:
-        print("Test Accuracies for DSSS (BPSK, QPSK) Detection: ", test_acc_anomaly_mod)
-        print("Test Accuracies for DSSS Spreading Gain Detection: ", test_acc_anomaly_gain)
-        print("Test Accuracies for DSSS Type Detection: ", test_acc_anomaly_type)
-    print("Final test accuracy for LTE and DSSS Detection: ", test_acc_anomaly_detection[int(args.epochs) - 1])
-    if args.num_classes > 2:
-        print("Final test accuracy for DSSS (BPSK, QPSK) Detection: ", test_acc_anomaly_mod[int(args.epochs) - 1])
-        print("Final test accuracy for DSSS Spreading Gain Detection: ", test_acc_anomaly_gain[int(args.epochs) - 1])
-        print("Final test accuracy for DSSS Type Detection: ", test_acc_anomaly_type[int(args.epochs) - 1])
+    
+    if args.classifier == 'nn': 
+      print("Test Accuracies for LTE and DSSS Detection: ", test_acc_anomaly_detection)
+      print("Final test accuracy for LTE and DSSS Detection: ", test_acc_anomaly_detection[int(args.epochs) - 1])
     print("End of Non-Conjugate")
 
 # TRAINING ON ONLY CONJUGATE CSP FEATURES
@@ -878,25 +1023,36 @@ if fusion is False and "c" in args.input:
         test_acc = metrics.accuracy_score(ytest, ypred)
         print("Test Accuracies for LTE and DSSS Detection using", args.classifier, " is :  train acc (", train_acc, ") and test acc (", test_acc, ").")
 
-    print("Test Accuracies for LTE and DSSS Detection: ", test_acc_anomaly_detection)
-    if args.num_classes > 2:
-        print("Test Accuracies for DSSS (BPSK, QPSK) Detection: ", test_acc_anomaly_mod)
-        print("Test Accuracies for DSSS Spreading Gain Detection: ", test_acc_anomaly_gain)
-        print("Test Accuracies for DSSS Type Detection: ", test_acc_anomaly_type)
-    print("Final test accuracy for LTE and DSSS Detection: ", test_acc_anomaly_detection[int(args.epochs) - 1])
-    if args.num_classes > 2:
-        print("Final test accuracy for DSSS (BPSK, QPSK) Detection: ", test_acc_anomaly_mod[int(args.epochs) - 1])
-        print("Final test accuracy for DSSS Spreading Gain Detection: ", test_acc_anomaly_gain[int(args.epochs) - 1])
-        print("Final test accuracy for DSSS Type Detection: ", test_acc_anomaly_type[int(args.epochs) - 1])
+    if args.classifier == 'nn': 
+      print("Test Accuracies for LTE and DSSS Detection: ", test_acc_anomaly_detection)
+      print("Final test accuracy for LTE and DSSS Detection: ", test_acc_anomaly_detection[int(args.epochs) - 1])
     print("End of Conjugate")
 
 
 # TRAINING ON IQ DATA
 # input size of DL framework (batch size, slice size,I/Q) = (256, 256, 2)
 if fusion is False and "iq" in args.input:
-    single_modal_training(saved_file_name)
-    print("Test Accuracies for LTE and DSSS Detection: ", test_acc_anomaly_detection)
-    print("Final test accuracy for LTE and DSSS Detection: ", test_acc_anomaly_detection[int(args.epochs) - 1])
+    if args.classifier == 'nn':
+        single_modal_training(saved_file_name)
+    else:
+        ytrain = np.argmax(ytrain, axis=1)
+        ytest = np.argmax(ytest, axis=1)
+        if args.classifier == 'lr':
+            clf = LogisticRegression(random_state=0).fit(xtrain, ytrain)
+        if args.classifier == 'nv':
+            clf = GaussianNB().fit(xtrain, ytrain)
+        if args.classifier == 'svm':
+            clf = svm.SVC().fit(xtrain, ytrain)
+            # score = clf.score(xtest, ytest)
+        ypred = clf.predict(xtest)
+        train_acc = clf.score(xtrain, ytrain)
+        test_acc = metrics.accuracy_score(ytest, ypred)
+        print("Test Accuracies for LTE and DSSS Detection using", args.classifier, " is :  train acc (", train_acc, ") and test acc (", test_acc, ").")
+
+    
+    if args.classifier == 'nn': 
+      print("Test Accuracies for LTE and DSSS Detection: ", test_acc_anomaly_detection)
+      print("Final test accuracy for LTE and DSSS Detection: ", test_acc_anomaly_detection[int(args.epochs) - 1])
     print("End of I/Q")
 
 
@@ -958,11 +1114,13 @@ def two_modality_training(saved_file_name, xtrain_mod1, xtrain_mod2, ytrain, xte
         train_total = 0  # Acc is calculated per epoch for training data
         test_correct = 0
         test_total = 0
+        train_start_time = time.time()
+        model.train()
         for i, (batch1, batch2, train_labels) in enumerate(training_generator):
                 batch1, batch2, train_labels = batch1.float().to(device), batch2.float().to(device), train_labels.float().to(device)
 
                 # Forward pass
-                outputs = model(batch1, batch2)
+                outputs, _ = model(batch1, batch2)
                 loss = criterion(outputs, torch.max(train_labels, 1)[1])
 
                 # Backward and optimize
@@ -975,28 +1133,48 @@ def two_modality_training(saved_file_name, xtrain_mod1, xtrain_mod2, ytrain, xte
                 labels = train_labels.cpu().detach().numpy()
                 train_total += labels.shape[0]
                 train_correct += (np.argmax(labels, axis=1) == np.argmax(outputs, axis=1)).sum().item()
+        train_end_time = time.time()
+        print("The learning rate is: ", optimizer.param_groups[0]['lr'])
         model.eval()
 
         # Test
-
+        test_start_time = time.time()
+        # To create the t-SNE plots
+        features_tsne = np.zeros(1)
+        y_tsne = np.zeros(1)
+        test_batch_count = 0
         for test_batch1, test_batch2, test_labels in test_generator:
             test_batch1, test_batch2, test_labels = test_batch1.float().to(device), test_batch2.float().to(
                 device), test_labels.float().to(device)
-            test_output = model(test_batch1, test_batch2)
+            test_output, latent_features = model(test_batch1, test_batch2)
 
             test_output = test_output.cpu().detach().numpy()
             test_labels = test_labels.squeeze().cpu().detach().numpy()
 
+            print("Sanity check:", np.argmax(test_labels, axis=1),  np.argmax(test_output, axis=1))
             # CALCULATING THE TEST ACCURACY
             test_total += test_labels.shape[0]
             test_correct += (np.argmax(test_labels, axis=1) == np.argmax(test_output, axis=1)).sum().item()
+            ############################ t-SNE PLOT ##############################
+            if test_batch_count == 0:
+              features_tsne = latent_features.cpu().detach().numpy()
+              y_tsne = np.argmax(test_output, axis=1)
+            else:
+              features_tsne = np.concatenate ((features_tsne, latent_features.cpu().detach().numpy()), axis = 0)
+              y_tsne = np.concatenate ((y_tsne, np.argmax(test_output, axis=1)), axis = 0)
+            
+            test_batch_count += 1
+            ##############################################################
         test_acc_anomaly_detection.append(100 * test_correct / test_total)
 
-
+        test_end_time = time.time()
+        print("Time to train one epoch: ", (train_end_time - train_start_time), " seconds")
+        print("Time to test one sample: ", (test_end_time - test_start_time)/args.bs, " seconds" )
         # print loss and accuracies
         if (epoch % 1 == 0): print('epoch {}, loss {} train acc {} test acc {}'.format(epoch, loss.data, (100 * train_correct / train_total), (100 * test_correct / test_total)))
 
-
+    # Plotting the features in t-SNE format 
+    tsne_plot_generator(features_tsne, y_tsne, saved_file_name)
     torch.save(model, args.model_folder + '/' + saved_file_name + '.pt')
     if args.retrain: torch.save({
         'epoch': args.epochs,
@@ -1049,11 +1227,13 @@ def three_modality_training(saved_file_name, xtrain_mod1, xtrain_mod2, xtrain_mo
         train_total = 0  # Acc is calculated per epoch for training data
         test_correct = 0
         test_total = 0
+        train_start_time = time.time()
+        model.train()
         for i, (batch1, batch2, batch3, train_labels) in enumerate(training_generator):
                 batch1, batch2, batch3, train_labels = batch1.float().to(device), batch2.float().to(device), batch3.float().to(device), train_labels.float().to(device)
 
                 # Forward pass
-                outputs= model(batch1, batch2, batch3)
+                outputs, _ = model(batch1, batch2, batch3)
                 loss = criterion(outputs, torch.max(train_labels, 1)[1])
 
                 # Backward and optimize
@@ -1066,27 +1246,47 @@ def three_modality_training(saved_file_name, xtrain_mod1, xtrain_mod2, xtrain_mo
                 labels = train_labels.cpu().detach().numpy()
                 train_total += labels.shape[0]
                 train_correct += (np.argmax(labels, axis=1) == np.argmax(outputs, axis=1)).sum().item()
+        train_end_time = time.time()
+        print("The learning rate is: ", optimizer.param_groups[0]['lr'])
         model.eval()
 
         # Test
-
+        # To create the t-SNE plots
+        features_tsne = np.zeros(1)
+        y_tsne = np.zeros(1)
+        test_batch_count = 0
+        test_start_time = time.time()
         for test_batch1, test_batch2, test_batch3, test_labels in test_generator:
             test_batch1, test_batch2, test_batch3, test_labels = test_batch1.float().to(device), test_batch2.float().to(device), test_batch3.float().to(device), test_labels.float().to(device)
-            test_output = model(test_batch1, test_batch2, test_batch3)
+            test_output, latent_features = model(test_batch1, test_batch2, test_batch3)
 
             test_output = test_output.cpu().detach().numpy()
             test_labels = test_labels.squeeze().cpu().detach().numpy()
 
+            print("Sanity check:", np.argmax(test_labels, axis=1),  np.argmax(test_output, axis=1))
             # CALCULATING THE TEST ACCURACY
             test_total += test_labels.shape[0]
             test_correct += (np.argmax(test_labels, axis=1) == np.argmax(test_output, axis=1)).sum().item()
+            ############################ t-SNE PLOT ##############################
+            if test_batch_count == 0:
+              features_tsne = latent_features.cpu().detach().numpy()
+              y_tsne = np.argmax(test_output, axis=1)
+            else:
+              features_tsne = np.concatenate ((features_tsne, latent_features.cpu().detach().numpy()), axis = 0)
+              y_tsne = np.concatenate ((y_tsne, np.argmax(test_output, axis=1)), axis = 0)
+            
+            test_batch_count += 1
+            ##############################################################
         test_acc_anomaly_detection.append(100 * test_correct / test_total)
 
-
+        test_end_time = time.time()
+        print("Time to train one epoch: ", (train_end_time - train_start_time), " seconds")
+        print("Time to test one sample: ", (test_end_time - test_start_time)/args.bs, " seconds" )
         # print loss and accuracies
         if (epoch % 1 == 0): print('epoch {}, loss {} train acc {} test acc {}'.format(epoch, loss.data, (100 * train_correct / train_total), (100 * test_correct / test_total)))
 
-
+    # Plotting the features in t-SNE format 
+    tsne_plot_generator(features_tsne, y_tsne, saved_file_name)
     torch.save(model, args.model_folder + '/' + saved_file_name + '.pt')
     if args.retrain: torch.save({
         'epoch': args.epochs,

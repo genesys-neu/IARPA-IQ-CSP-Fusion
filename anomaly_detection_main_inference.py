@@ -30,15 +30,17 @@ parser = argparse.ArgumentParser(description='Configure the files before trainin
 # parser.add_argument('--data_folder', help='Location of the directory where all the conjugate or non-conjugate files are stored', type=str, default= 'D:/IARPA_DATA/NEU_LTE_DSSS_Dataset_2_CSP/')
 # parser.add_argument('--model_file', help='Location of the model file (with directory)', type=str, default= 'D:/IARPA_DATA/Saved_Models/best/non_conjugate_all_SNR_all_SIR.pt')
 
-parser.add_argument('--data_folder', help='Location of the directory where all the conjugate or non-conjugate files are stored', type=str, default= 'D:/IARPA_DATA/NWRA_data/131072/')
-parser.add_argument('--model_file', help='Location of the model file (with directory)', type=str, default= 'D:/IARPA_DATA/Saved_Models/block_wise_trained_model_on_sythetic_dataset_strategy5/non_conjugate_131072.pt')
+parser.add_argument('--data_folder', help='Location of the directory where all the conjugate or non-conjugate files are stored', type=str, default= 'D:/IARPA_DATA/LTE-recorded-at-AiRANACULUS/LTE/')  # D:/IARPA_DATA/NWRA_data/131072/
+# parser.add_argument('--model_file', help='Location of the model file (with directory)', type=str, default= 'D:/IARPA_DATA/Saved_Models/block_wise_trained_model_on_sythetic_dataset_strategy5/non_conjugate_131072.pt')
+parser.add_argument('--model_file', help='Location of the model file (with directory)', type=str, default= 'D:/IARPA_DATA/Saved_Models/NWRA_dataset_models/non_conjugate_262144.pt')
 parser.add_argument('--bs',default=8, type=int,help='Batch size') # 32
 parser.add_argument('--id_gpu', default=0, type=int, help='which gpu to use.')
 parser.add_argument('--feature_options', nargs='*', default=[0, 1, 2, 3],choices = [0, 1, 2, 3],
 help='Which features to use from the conjugate and non-conjugate files.')
 parser.add_argument('--strategy',  type=int, default =4, choices = [0, 1, 2, 3, 4], help='Different strategies used for CSP feature processing: naive (0), 2D matrix (1), extract stat (2), 3D matrix (3), extract stat from one column (4).')
 # Train and test on the data from Chad
-parser.add_argument('--real_data', type=str2bool, help='Perform inference on real data from Chad.', default=True)
+parser.add_argument('--real_data', type=str2bool, help='Perform inference on real data from Chad.', default=False)
+parser.add_argument('--air_data', type=str2bool, help='Perform inference on real data from Chad.', default=True)
 parser.add_argument('--dsss_type', type=str, default='real', choices = ['all', 'real', 'synthetic'], help='Specify which type of DSSS signals you want to use for training and testing.')
 
 
@@ -167,7 +169,7 @@ for filename in os.listdir(args.data_folder):
         # print("testing333..", row_output)
         correct = correct+row_output
         end_time = time.time()
-        pred_label = 'OnlyLTE'
+        pred_label = 'LTE'
         if row_output == 1:pred_label = 'Combined_LTE_DSSS'
         print("The prediction from CSP features in ", filename, " is: ", pred_label)
         print("\n Total time of execution for", filename, " is : ", (end_time - start_time), " seconds.")
@@ -186,7 +188,8 @@ for filename in os.listdir(args.data_folder):
                 total_matched +=1
         total_files += 1
     else:
-        print("Skipping the conjugate features in ", filename)
+        # print("Skipping the conjugate features in ", filename)
+        pass
 
 ############################################
 print("This part is for sanity check with Vini's dataset.")
