@@ -2,8 +2,10 @@
 
 This github repo releases the codes for different fusion frameworks of a submitted paper on three different dataset containing IQ samples and Cyclostationary Signal Processing (CSP) features. 
 
-The Dataset: 
-*The dataset is publicly available in: TBA
+The Datasets: Three datasets are used for this paper.
+* Synthetic Dataset: Matlab generated dataset with standard compliant waveforms (link: TBA)
+* Indoor OTA-PAWR Dataset: OTA dataset collected in POWDER platform (link: TBA)
+* Indoor OTA-Cellular Dataset: OTA datset collected in the Wild (link: TBA)
 
 # Contents
 * [Overview](#overview)
@@ -16,26 +18,23 @@ The Dataset:
 
 
 # Overview
-
-This project implements multi-vehicle detection using four (image, radar, acoustic, seismic) modalities on ESCAPE and NuScene dataset. In this repository, we give the codes of our implementation in NuScene dataset which used two of these modalities and two fusion networks. We have multiple other proposed fusion networks on ESCAPE dataset, which are described in details in the aforementioned paper. This repository does not release the datasets, you should download or get access to the datasets seperately. We encourage the community to use the fusion network ideas from this repository or our paper published in IEEE Transactions on Multimedia (citing the mentioned paper).
+This repository presents a machine learning based framework that offers choices at the physical layer for inference with inputs of (i) in-phase and quadrature (IQ) samples only, (ii) cycle frequency features obtained via cyclostationary signal processing (CSP), and (iii) fusion of both, to detect the underlay DSSS signal and its modulation type within LTE frames. ICARUS chooses the best inference method considering both the expected accuracy and the computational overhead. ICARUS is rigorously validated on multiple real-world datasets that include signals captured in cellular bands in the wild and the NSF POWDER testbed for advanced wireless research (PAWR). We encourage the community to use the fusion network ideas from this repository or our paper published in archive.
 
 The overall implementation for NuScene dataset is devided by two folds: (1) first we implement 2 different unimodal neworks for image and radar fined tuned to corresponsing features in NuScene dataset; (2) second we implement fusion between these two modalities. 
 
-Here are the necessary descriptions of the part of the NuScene dataset used here:
+**Signals** (2): `['LTE', 'LTE + DSSS']`
 
-**Vehicles** (4): `['construction vehicles', 'motorcycle', 'trailer', 'truck]`
+**Number of Samples**: Synthetic: 210 (LTE) + 420 (LTE + DSSS); OTA-Indoor: 500 (LTE) + 2000 (LTE + DSSS); OTA-Cellular: 2430 (LTE) + 2430 (LTE + DSSS)
 
-**Number of Scenes**: 850
+**Used Modalities**: `['IQ Samples', 'CSP Features']`
 
-**Used Sensors**: `['CAM_FRONT', 'RADAR_FRONT']`
-
-**Perforence Metric**: Area under the ROC Curve (`AUC`) and Average Precision (AP)
+**Perforence Metric**: Accuracy in %
 
 Paths for required features to run the codes:
 
-Model Path: `E:/ESCAPE_data/Saved_Models/NuScene/` or `/path/to/directory/Multimodal_Fusion_NuScene/NuScene/` (please change as per your setting)
+Model Path: `D:/IARPA_DATA/Saved_Models/` or `/path/to/directory/IARPA-IQ-CSP-Fusion/` (please change as per your setting)
 
-Data Path: `E:/ESCAPE_data/NuScene_data/miniset/` or `/path/to/directory/Multimodal_Fusion_NuScene/NuScene_data/miniset/`  (please change as per your setting - you should download 'v1.0-trainval' folder from NuScene dataset page)
+Data Path: `D:/IARPA_DATA/` or `/path/to/directory/IARPA-IQ-CSP-Fusion/`  (please change as per your setting)
 
 
 The main file to run the codes is `main_nuscene.py`. The detailed examples are given on how to run each type of unimodal and fusion networks. Using `main_nuscene.py` file you can run: 
