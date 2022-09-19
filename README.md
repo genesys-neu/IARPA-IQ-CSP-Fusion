@@ -38,6 +38,7 @@ Data Path: `D:/IARPA_DATA/` or `/path/to/directory/IARPA-IQ-CSP-Fusion/`  (pleas
 The main file to run the codes is `anomaly_detection_main.py`. The detailed examples are given on how to run (a) IQ only, (b) CSP only, and (c) fusion pipelines. 
 
 ## Important Parameters: 
+* `input`: [`iq`, `nc`, 'c'] DEFAULT: `iq` (for IQ Pipeline: `iq`, CSP Pipeline: `nc`, Fusion Pipeline `iq` `nc`)
 * `fusion_layer`: [`penultimate`, `ultimate`] DEFAULT: `ultimate`
 * `real_data`: [`True`, `False`] DEFAULT: `False` (hence Matlab dataset will be selected by default, if TRUE OTA Cellular dataset will be selected)
 * `powder_data`: [`True`, `False`] DEFAULT: `False` (hence OTA POWDER dataset will not be selected)
@@ -52,88 +53,76 @@ The main file to run the codes is `anomaly_detection_main.py`. The detailed exam
 * `retrain`: [`True`, `False`] DEFAULT: `False`
 
 # IQ Pipeline
-The unimodal networks for radar, and image  can be trained on the processes features (please notice to give the correct path for the features). Please keep the same folder structure as in the original processed feature folder for each modalities. 
 
 The IQ pipleine can be trained using different learning rates (`lr`, DEFAULT: `0.0001`), batch size (`bs`, DEFAULT: `8`), epochs (`epochs`, DEFAULT: `50`).
 
-One example of training the IQ pipleine on OTA Cellular dataset:
+One example of training the IQ pipleine on OTA Cellular dataset with IQ block length of 131072:
 ```
-python main_nuscene.py \
+python anomaly_detection_main.py \
     --data_folder /path/to/directory/IARPA-IQ-CSP-Fusion/ \
     --model_folder /path/to/directory/IARPA-IQ-CSP-Fusion/ \
+    --input iq \
+    --real_data True \
+    --powder_data False \
+    --iq_slice_len 131072 \ 
+    --random_test True \
+    --random_test_blocks 131072 \
+    --dsss_type all \
     --input iq \
     --lr 0.0001 \
     --bs 8 \
     --epochs 50 \
 ```
-The trained model will be saved in the model folder (`/path/to/directory/Multimodal_Fusion_NuScene/Saved_Models/NuScene/`).
+The trained model will be saved in the model folder (`/path/to/directory/IARPA-IQ-CSP-Fusion/`). This pipeline can be run on any of the three mentioned datasets.
 
-## Image Model
-The image model can be trained using different learning rates (`lr`, DEFAULT: `0.0001`), batch size (`bs`, DEFAULT: `32`), epochs (`epochs`, DEFAULT: `40`).
 
-One example of training the image model and getting AUC and AP per vehicle:
+# CSP Pipeline
+
+The CSP pipleine can be trained using different learning rates (`lr`, DEFAULT: `0.0001`), batch size (`bs`, DEFAULT: `8`), epochs (`epochs`, DEFAULT: `50`).
+
+One example of training the IQ pipleine on OTA POWDER dataset with IQ block length of 524288:
 ```
-python main_nuscene.py \
-    --data_folder /path/to/directory/Multimodal_Fusion_NuScene/NuScene_data/miniset/ \
-    --model_folder /path/to/directory/Multimodal_Fusion_NuScene/Saved_Models/NuScene/ \
-    --input image \
+python anomaly_detection_main.py \
+    --data_folder /path/to/directory/IARPA-IQ-CSP-Fusion/ \
+    --model_folder /path/to/directory/IARPA-IQ-CSP-Fusion/ \
+    --input nc \
+    --real_data False \
+    --powder_data True \
+    --iq_slice_len 524288 \ 
+    --random_test True \
+    --random_test_blocks 524288 \
+    --dsss_type all \
+    --input iq \
     --lr 0.0001 \
-    --bs 32 \
-    --epochs 40 \
+    --bs 8 \
+    --epochs 50 \
 ```
-The trained model will be saved in the model folder (`/path/to/directory/Multimodal_Fusion_NuScene/Saved_Models/NuScene/`).
-
-# Fusion Networks
-After we have trained models for radar, and image, we perform two different types of fusions among them. Different fusion techniques are described bellow. All the fusion networks can be run using the same `main_nuscene.py`. In each run you can either use one of the fusion strategies: (i) `concat`, (ii) `lr_tensor`, (iii)`mi`. These fusion strategies corresponds to concatenation, low rank tensor fusion, and multiplicative interactions. The implementations are taken and modified from https://github.com/pliang279/MultiBench, given in `common_fusions` folder. For the options (3), (4), you can set fusion layers: (i) `ultimate`, (ii) `penultimate`.
-
-
-## Aggregated Fusion
-Aggregated fusion fuses radar and iamge features either at `ultimate` or `penultimate` layer by using either of the fusion strategies. The fusion model can be trained using different learning rates (`lr`, DEFAULT: `0.0001`), batch size (`bs`, DEFAULT: `32`), epochs (`epochs`, DEFAULT: `40`). 
+The trained model will be saved in the model folder (`/path/to/directory/IARPA-IQ-CSP-Fusion/`). This pipeline can be run on any of the three mentioned datasets.
 
 
 
-One example of training the aggregated fusion model at `penultimate` layer using low rank fusion strategy with restoring the unimodal models and retraining, and getting prediction AUCs and APs per vehicle:
 
+# Fusion Pipeline
+The fusion pipleine can be trained using different learning rates (`lr`, DEFAULT: `0.0001`), batch size (`bs`, DEFAULT: `8`), epochs (`epochs`, DEFAULT: `50`).
+
+One example of training the IQ pipleine on Matlab dataset with IQ block length of 262144:
 ```
-python main_nuscene.py \
-    --data_folder /path/to/directory/Multimodal_Fusion_NuScene/NuScene_data/miniset/ \
-    --model_folder /path/to/directory/Multimodal_Fusion_NuScene/Saved_Models/NuScene/ \
-    --input radar \
+python anomaly_detection_main.py \
+    --data_folder /path/to/directory/IARPA-IQ-CSP-Fusion/ \
+    --model_folder /path/to/directory/IARPA-IQ-CSP-Fusion/ \
+    --input iq nc\
+    --real_data False \
+    --powder_data False \
+    --iq_slice_len 262144 \ 
+    --random_test True \
+    --random_test_blocks 262144 \
+    --dsss_type all \
+    --input iq \
     --lr 0.0001 \
-    --bs 32 \
-    --epochs 40 \
-    --state_fusions True \ 
-    --fusion_layer penultimate \
-    --fusion_techniques lr_tensor\
-    --restore_models True \
-    --retrain True 
+    --bs 8 \
+    --epochs 50 \
 ```
-
-The trained model will be saved in the model folder (`/path/to/directory/Multimodal_Fusion_NuScene/Saved_Models/NuScene/`).
-
-## Incremental Fusion
-Incremental fusion fuses radar, acoustic and seismic features either at `ultimate` or `penultimate` layer successively. It will use one of the pretrained model of `acoustic_radar_incremental_penultimate.pt` or `acoustic_radar_incremental.pt` from the model folder. The fusion model can be trained using different learning rates (`lr`, DEFAULT: `0.0001`), batch size (`bs`, DEFAULT: `32`), epochs (`epochs`, DEFAULT: `40`). 
-
-#### Important Parameters: 
-* `incremental_fusion`: [`True`, `False`] DEFAULT: `False` (this will run the aggregated fusion)
-* `fusion_layer`: [`penultimate`, `ultimate`] DEFAULT: `ultimate`
-* `fusion_techniques`: [`mi`, `lr_tensor`, `concat`] DEFAULT: `concat`
-* `state_fusions`: [`True`, `False`] DEFAULT: `False`
-
-One example of training the incremental fusion model at `penultimate` layer using concatenation as fusion strategy, and getting prediction AUCs and APs per vehicle:
-
-```
-python non-image-fusion-main.py \
-    --data_folder /path/to/directory/Multimodal_Fusion_NuScene/NuScene_data/miniset/ \
-    --model_folder /path/to/directory/Multimodal_Fusion_NuScene/Saved_Models/NuScene/ \
-    --input radar image \
-    --lr 0.0001 \
-    --bs 32 \
-    --epochs 40 \
-    --state_fusions False \ 
-    --fusion_layer penultimate \
-    --incremental_fusion True \
-```
-The trained model will be saved in the model folder (`/path/to/directory/Multimodal_Fusion_NuScene/Saved_Models/NuScene/`).
+The trained model will be saved in the model folder (`/path/to/directory/IARPA-IQ-CSP-Fusion/`). This pipeline can be run on any of the three mentioned datasets.
 
 
+These three mentioned pipleine can also be run to detect the variant of DSSS signal (whether `BPSK` or `QPSK` modulation) using `variant_detection_main.py` in similar manner. 
