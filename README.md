@@ -9,12 +9,10 @@ The Datasets: Three datasets are used for this paper.
 
 # Contents
 * [Overview](#overview)
-* [Unimodal Networks](#unimodal-networks)
-    *  [Radar Model](#radar-model)
-    *  [Image Model](#image-model)
-* [Fusion Networks](#fusion-networks)
-    *  [Aggregated Fusion](#aggregated-fusion)
-    *  [Incremental Fusion](#incremental-fusion)
+* [IQ Pipeline](#iq-pipeline)
+* [CSP Pipeline](#csp-pipeline)
+* [Fusion Pipeline](#fusion-pipeline)
+
 
 
 # Overview
@@ -37,28 +35,36 @@ Model Path: `D:/IARPA_DATA/Saved_Models/` or `/path/to/directory/IARPA-IQ-CSP-Fu
 Data Path: `D:/IARPA_DATA/` or `/path/to/directory/IARPA-IQ-CSP-Fusion/`  (please change as per your setting)
 
 
-The main file to run the codes is `main_nuscene.py`. The detailed examples are given on how to run each type of unimodal and fusion networks. Using `main_nuscene.py` file you can run: 
-1. unimodal radar network
-2. unimodal image network
-3. aggregated fusion among (radar, image)
-4. incremental fusion among (radar, image)
+The main file to run the codes is `anomaly_detection_main.py`. The detailed examples are given on how to run (a) IQ only, (b) CSP only, and (c) fusion pipelines. 
 
+## Important Parameters: 
+* `fusion_layer`: [`penultimate`, `ultimate`] DEFAULT: `ultimate`
+* `real_data`: [`True`, `False`] DEFAULT: `False` (hence Matlab dataset will be selected by default, if TRUE OTA Cellular dataset will be selected)
+* `powder_data`: [`True`, `False`] DEFAULT: `False` (hence OTA POWDER dataset will not be selected)
+* `dsss_type`: [`all`, `real`, `synthetic`] DEFAULT: `all` (hence all type of DSSS signals will be selected, valid when `real_data = True`)
+* `iq_slice_len`: [`131072`, `262144`, `524288`] DEFAULT: `131072` (hence the IQ samples of length `131072` and corresponding CSP features will be processed)
+* `strategy`: [`0`,`1`, `2`, `3`, `4`] DEFAULT: `4` (Different strategies used for CSP feature processing: naive (0), 2D matrix (1), extract stat (2), 3D matrix (3), extract stat specific max (4))
+* `random_test`: [`True`, `False`] DEFAULT: `True` (hence perform train/test on 80/20 of data)
+* `random_snr_test`: [`True`, `False`] DEFAULT: `True` (hence train and test on specific SNR values)
+* `random_snr`: [`0`, `5`, `10`] DEFAULT: [`0`, `5`, `10`] (LTE signals of all these SNR values will be used)
+* `dsss_sir`: [`0`, `5`, `10`] DEFAULT: [`0`, `5`, `10`] (DSSS signals of all these SIR values will be used)
+* `restore_models`: [`True`, `False`] DEFAULT: `False` (hence trained for scratch for each modality)
+* `retrain`: [`True`, `False`] DEFAULT: `False`
 
-# Unimodal Networks
+# IQ Pipeline
 The unimodal networks for radar, and image  can be trained on the processes features (please notice to give the correct path for the features). Please keep the same folder structure as in the original processed feature folder for each modalities. 
 
-## Radar Model
-The radar model can be trained using different learning rates (`lr`, DEFAULT: `0.0001`), batch size (`bs`, DEFAULT: `32`), epochs (`epochs`, DEFAULT: `40`).
+The IQ pipleine can be trained using different learning rates (`lr`, DEFAULT: `0.0001`), batch size (`bs`, DEFAULT: `8`), epochs (`epochs`, DEFAULT: `50`).
 
-One example of training the radar model and getting AUC and AP per vehicle:
+One example of training the IQ pipleine on OTA Cellular dataset:
 ```
 python main_nuscene.py \
-    --data_folder /path/to/directory/Multimodal_Fusion_NuScene/NuScene_data/miniset/ \
-    --model_folder /path/to/directory/Multimodal_Fusion_NuScene/Saved_Models/NuScene/ \
-    --input radar \
+    --data_folder /path/to/directory/IARPA-IQ-CSP-Fusion/ \
+    --model_folder /path/to/directory/IARPA-IQ-CSP-Fusion/ \
+    --input iq \
     --lr 0.0001 \
-    --bs 32 \
-    --epochs 40 \
+    --bs 8 \
+    --epochs 50 \
 ```
 The trained model will be saved in the model folder (`/path/to/directory/Multimodal_Fusion_NuScene/Saved_Models/NuScene/`).
 
@@ -84,12 +90,7 @@ After we have trained models for radar, and image, we perform two different type
 ## Aggregated Fusion
 Aggregated fusion fuses radar and iamge features either at `ultimate` or `penultimate` layer by using either of the fusion strategies. The fusion model can be trained using different learning rates (`lr`, DEFAULT: `0.0001`), batch size (`bs`, DEFAULT: `32`), epochs (`epochs`, DEFAULT: `40`). 
 
-#### Important Parameters: 
-* `fusion_layer`: [`penultimate`, `ultimate`] DEFAULT: `ultimate`
-* `fusion_techniques`: [`mi`, `lr_tensor`, `concat`] DEFAULT: `concat`
-* `restore_models`: [`True`, `False`] DEFAULT: `False` (hence trained for scratch for each modality)
-* `retrain`: [`True`, `False`] DEFAULT: `False`
-* `state_fusions`: [`True`, `False`] DEFAULT: `False`
+
 
 One example of training the aggregated fusion model at `penultimate` layer using low rank fusion strategy with restoring the unimodal models and retraining, and getting prediction AUCs and APs per vehicle:
 
