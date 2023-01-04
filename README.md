@@ -18,8 +18,6 @@ The Datasets: Three datasets are used for this paper.
 # Overview
 This repository presents a machine learning based framework that offers choices at the physical layer for inference with inputs of (i) in-phase and quadrature (IQ) samples only, (ii) cycle frequency features obtained via cyclostationary signal processing (CSP), and (iii) fusion of both, to detect the underlay DSSS signal and its modulation type within LTE frames. ICARUS chooses the best inference method considering both the expected accuracy and the computational overhead. ICARUS is rigorously validated on multiple real-world datasets that include signals captured in cellular bands in the wild and the NSF POWDER testbed for advanced wireless research (PAWR). We encourage the community to use the fusion network ideas from this repository or our paper published in archive.
 
-The overall implementation for NuScene dataset is devided by two folds: (1) first we implement 2 different unimodal neworks for image and radar fined tuned to corresponsing features in NuScene dataset; (2) second we implement fusion between these two modalities. 
-
 **Signals** (2): `['LTE', 'LTE + DSSS']`
 
 **Number of Samples**: Synthetic: 210 (LTE) + 420 (LTE + DSSS); OTA-Indoor: 500 (LTE) + 2000 (LTE + DSSS); OTA-Cellular: 2430 (LTE) + 2430 (LTE + DSSS)
