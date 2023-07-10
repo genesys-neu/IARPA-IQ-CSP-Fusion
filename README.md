@@ -7,6 +7,21 @@ The Datasets: Three datasets are used for this paper.
 * Indoor OTA-PAWR Dataset: OTA dataset collected in POWDER platform (link: TBA)
 * Indoor OTA-Cellular Dataset: OTA datset collected in the Wild (link: TBA)
 
+## Citing This Paper
+Please cite the following paper if you intend to use this code for your research.
+
+D. Roy, V. Chaudhary, C. Tassie, C. Spooner, and K. R. Chowdhury, “ICARUS: Learning on IQ and Cycle Frequencies for Detecting Anomalous RF Underlay Signals,” IEEE Conference on Computer Communications (INFOCOM), May, 2023.
+
+### Bibtex:
+
+ `@INPROCEEDINGS{RoyInfocom22,
+author = {Roy, Debashri and Chaudhury, Vini and Tassie, Chineneye and Spooner, Chad M  and Chowdhury, Kaushik R.},
+title = {{ICARUS: Learning on IQ and Cycle Frequencies for Detecting Anomalous RF Underlay Signals}},
+booktitle = {{IEEE International Conference on Computer Communications (INFOCOM)}},
+  year={2023},
+  month = {May}
+  }`
+
 # Contents
 * [Overview](#overview)
 * [IQ Pipeline](#iq-pipeline)
